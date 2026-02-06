@@ -2,286 +2,230 @@
 
 Minimal Next.js fullstack app demonstrating Claude Agent SDK running in Moru sandboxes. Features a chat UI and workspace file explorer adapted from [maru.moru.io](https://maru.moru.io).
 
-## Features
+## Prerequisites
 
-- **Chat Interface**: Send messages to Claude, view responses with tool use rendering
-- **Workspace Panel**: File explorer with tree view, syntax-highlighted file viewer
-- **Moru Integration**: Sandboxes with persistent volumes for file storage
-- **Polling Updates**: 2-second polling for conversation status and file changes
+- **Node.js 20+** and **pnpm** — [nodejs.org](https://nodejs.org), install pnpm via `npm install -g pnpm`
+- **PostgreSQL** — local instance or a hosted provider (Neon, Supabase, Railway, etc.)
+- **Moru API key** — sign up at [moru.io/dashboard](https://moru.io/dashboard)
+- **Anthropic API key** — get one at [console.anthropic.com](https://console.anthropic.com)
+- **ngrok** — required for local development so sandbox callbacks can reach your machine. Get it at [ngrok.com](https://ngrok.com)
 
-## Architecture
+## Environment Variables
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Next.js Frontend                        │
-│  ┌──────────────────────┐  ┌──────────────────────────────┐ │
-│  │     Chat Panel       │  │     Workspace Panel          │ │
-│  │  - Message display   │  │  - File explorer (tree)      │ │
-│  │  - Prompt form       │  │  - File viewer (Shiki)       │ │
-│  │  - Status indicator  │  │  - Download support          │ │
-│  └──────────────────────┘  └──────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     Next.js API Routes                       │
-│  POST /api/conversations      - Create/continue conversation │
-│  GET  /api/conversations/[id] - Get status & messages        │
-│  POST /api/conversations/[id]/status - Agent callback        │
-│  GET  /api/conversations/[id]/files  - List files (tree)     │
-│  GET  /api/conversations/[id]/files/[...path] - Read file    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              ▼                               ▼
-┌──────────────────────┐         ┌──────────────────────────┐
-│      PostgreSQL      │         │      Moru Sandbox        │
-│  - Conversation      │         │  - Volume (persistent)   │
-│  - Status tracking   │         │  - Agent process         │
-│  - Session ID        │         │  - Claude Agent SDK      │
-└──────────────────────┘         └──────────────────────────┘
-```
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string (e.g. `postgresql://postgres:postgres@localhost:5432/hackathon`) |
+| `MORU_API_KEY` | Moru API key for sandbox creation and volume file operations |
+| `ANTHROPIC_API_KEY` | Anthropic API key — embedded in the agent template via `.credentials.json` |
+| `BASE_URL` | Callback URL for sandbox → your app. Local dev: your ngrok URL. Production: your deployed URL |
 
-## Setup
-
-### Prerequisites
-
-- Node.js 20+
-- PostgreSQL database
-- Moru API key
-- Anthropic API key
-
-### Environment Variables
-
-Create `.env`:
+Copy the example and fill in your values:
 
 ```bash
-DATABASE_URL="postgresql://user@localhost:5432/hackathon"
-MORU_API_KEY="your-moru-api-key"
-ANTHROPIC_API_KEY="your-anthropic-api-key"
-BASE_URL="http://localhost:3000"  # For agent callbacks
+cp .env.example .env
 ```
 
-### Install & Run
+## Local Development
+
+### 1. Install dependencies
 
 ```bash
-# Install dependencies
-npm install
-
-# Link local Moru SDK (if using unreleased Volume feature)
-cd ~/moru/sdks/packages/js-sdk && pnpm build && npm link
-cd ~/moru/hackathon-starter && npm link @moru-ai/core
-
-# Setup database
-npm run db:push
-
-# Start dev server
-npm run dev
+pnpm install
 ```
 
-Open http://localhost:3000
+### 2. Set up the database
 
-## Implementation Status
+```bash
+pnpm db:push
+```
 
-### Completed
+### 3. Build the agent template
 
-| Component | Description | Status |
-|-----------|-------------|--------|
-| **UI - Chat** | Message display, prompt form, status indicator | Done |
-| **UI - Workspace** | File explorer, file viewer, syntax highlighting | Done |
-| **API - Conversations** | Create, get status, polling | Done |
-| **API - Files** | List (tree), read content | Done |
-| **Moru SDK** | Volume, Sandbox integration | Done |
-| **TypeScript** | Full type safety | Done |
+The agent runs inside a Moru sandbox. You need to build and push the Docker template to Moru. This does **not** require Docker locally — Moru builds it remotely.
 
-### Not Yet Tested (Requires Infrastructure)
+```bash
+pnpm build:template
+```
 
-| Component | Description | Blocker |
-|-----------|-------------|---------|
-| **Full Flow** | Volume → Sandbox → Agent → Files | Needs valid API keys |
-| **Agent Execution** | Claude Agent SDK in sandbox | Needs `hackathon-ts-agent` template |
-| **Message Parsing** | Claude Code JSONL format | Needs running agent |
-| **Session Resume** | Continue existing conversation | Needs session ID from agent |
+This uploads the `agent/Dockerfile` to Moru and registers it as the `hackathon-ts-agent` template.
+
+> **Note:** A pre-built `hackathon-ts-agent` template is also available on Moru, so you can skip this step if you don't need to customize the agent.
+
+### 4. Start ngrok
+
+In a separate terminal, expose your local server:
+
+```bash
+ngrok http 3000
+```
+
+Copy the forwarding URL (e.g. `https://abc123.ngrok-free.app`) and set it as `BASE_URL` in your `.env`.
+
+### 5. Start the dev server
+
+```bash
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+## Deploy (Vercel)
+
+### 1. Set up a PostgreSQL database
+
+Use any PostgreSQL provider — [Neon](https://neon.tech), [Supabase](https://supabase.com), [Railway](https://railway.com), or any other. Copy the connection string.
+
+### 2. Deploy to Vercel
+
+```bash
+npm i -g vercel
+vercel login
+vercel
+```
+
+### 3. Configure environment variables
+
+```bash
+vercel env add DATABASE_URL production
+vercel env add MORU_API_KEY production
+vercel env add ANTHROPIC_API_KEY production
+vercel env add BASE_URL production   # Your production URL, e.g. https://your-app.vercel.app
+```
+
+### 4. Push the database schema
+
+```bash
+DATABASE_URL="your-connection-string" npx prisma db push
+```
+
+### 5. Deploy to production
+
+```bash
+vercel --prod
+```
 
 ## Project Structure
 
 ```
 hackathon-starter/
 ├── app/
-│   ├── api/
-│   │   └── conversations/
-│   │       ├── route.ts              # POST: create/continue
-│   │       └── [id]/
-│   │           ├── route.ts          # GET: status & messages
-│   │           ├── status/route.ts   # POST: agent callback
-│   │           └── files/
-│   │               ├── route.ts      # GET: list files
-│   │               └── [...path]/route.ts  # GET: read file
-│   ├── layout.tsx
-│   ├── page.tsx                      # Main chat + workspace UI
-│   └── globals.css
+│   ├── page.tsx                        # Main chat + workspace UI
+│   └── api/conversations/              # API routes
+├── agent/
+│   ├── src/agent.ts                    # Agent entry point (Claude Agent SDK)
+│   ├── template.ts                     # Builds Docker image on Moru
+│   └── Dockerfile                      # Agent container definition
 ├── components/
-│   ├── chat/
-│   │   ├── cc-messages.tsx           # Message list
-│   │   ├── cc-assistant-message.tsx  # Assistant message rendering
-│   │   ├── cc-tool-use.tsx           # Tool use display
-│   │   └── prompt-form.tsx           # Input form
-│   ├── workspace/
-│   │   ├── workspace-panel.tsx       # Main panel with header
-│   │   ├── file-explorer.tsx         # Tree-based file browser
-│   │   └── file-viewer.tsx           # Syntax-highlighted viewer
-│   └── ui/
-│       ├── button.tsx
-│       ├── textarea.tsx
-│       ├── resizable.tsx
-│       ├── tooltip.tsx
-│       ├── dropdown-menu.tsx
-│       ├── file-icon.tsx
-│       └── collapsible.tsx
+│   ├── chat/                           # Message display, prompt form
+│   └── workspace/                      # File explorer, file viewer
 ├── lib/
-│   ├── db.ts                         # Prisma client
-│   ├── moru.ts                       # Moru SDK helpers
-│   ├── types.ts                      # Claude Code session types
-│   └── utils.ts                      # cn() helper
+│   ├── moru.ts                         # Moru SDK helpers (Volume, Sandbox, files)
+│   ├── db.ts                           # Prisma client
+│   ├── types.ts                        # TypeScript types
+│   └── session-parser.ts              # Parse Claude Code JSONL sessions
 ├── prisma/
-│   └── schema.prisma                 # Conversation model
-├── agent/                            # Agent code (runs in sandbox)
-│   ├── src/agent.ts                  # Claude Agent SDK query
-│   ├── package.json
-│   └── tsconfig.json
+│   └── schema.prisma                   # Conversation model
 └── package.json
 ```
 
-## Key Dependencies
+## Customizing the Agent
 
-- `next` - React framework
-- `@moru-ai/core` - Moru SDK (Sandbox, Volume)
-- `@prisma/client` - Database ORM
-- `react-resizable-panels` - Resizable layout
-- `shiki` - Syntax highlighting
-- `lucide-react` - Icons
+The agent code lives in `agent/src/agent.ts`. The main customization point is the `query()` call:
 
-## Agent Template
-
-The agent runs inside a Moru sandbox. Template requirements:
-
-1. Node.js environment with Claude Agent SDK
-2. Volume mounted at `/workspace/data`
-3. Environment variables: `ANTHROPIC_API_KEY`, `CALLBACK_URL`, `RESUME_SESSION_ID`
-4. Entrypoint: `node /app/agent.js`
-
-See `agent/` directory for the agent implementation.
-
-## Deployment (Vercel + PostgreSQL)
-
-### 1. Create PostgreSQL Database
-
-Choose one of these options:
-
-**Option A: Neon (Recommended - Free tier)**
-1. Go to [neon.tech](https://neon.tech) and sign in
-2. Click **New Project**
-3. Name your project and select a region
-4. Copy the connection string from the dashboard
-
-**Option B: Supabase**
-1. Go to [supabase.com](https://supabase.com) and sign in
-2. Click **New Project** and fill in details
-3. Go to **Project Settings** → **Database** → **Connection string**
-4. Use the **Transaction** URL for serverless:
-   ```
-   postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true
-   ```
-
-### 2. Deploy to Vercel
-
-```bash
-# Install Vercel CLI (if not installed)
-npm i -g vercel
-
-# Login to Vercel
-vercel login
-
-# Deploy from hackathon-starter directory
-cd ~/moru/hackathon-starter
-vercel
+```typescript
+for await (const message of query({
+  prompt,
+  options: {
+    allowedTools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    cwd: workspace,
+    resume: sessionIdToResume,
+  },
+})) {
+  // ...
+}
 ```
 
-Follow the prompts to create a new project.
+### Changing allowed tools
 
-### 3. Configure Environment Variables
+Modify the `allowedTools` array to control what the agent can do:
 
-```bash
-# Add environment variables for production
-vercel env add DATABASE_URL production
-# Paste your PostgreSQL connection string
-
-vercel env add MORU_API_KEY production
-# Paste your Moru API key
-
-vercel env add BASE_URL production
-# Enter your production URL (e.g., https://hackathon-starter-sigma.vercel.app)
+```typescript
+allowedTools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 ```
 
-| Variable | Value | Description |
-|----------|-------|-------------|
-| `DATABASE_URL` | `postgresql://...` | PostgreSQL connection string |
-| `MORU_API_KEY` | `moru_...` | Moru API key |
-| `BASE_URL` | `https://your-app.vercel.app` | Your production URL |
+Remove `"Bash"` to prevent shell access, or remove `"Write"` and `"Edit"` for read-only mode.
 
-### 4. Push Database Schema
+### Adding a system prompt
 
-```bash
-# Set DATABASE_URL locally for Prisma
-export DATABASE_URL="your-connection-string"
+Add a `systemPrompt` option to give the agent custom instructions:
 
-# Push schema to database
-npx prisma db push
+```typescript
+options: {
+  systemPrompt: "You are a Python specialist. Always write tests for your code.",
+  // ...
+}
 ```
 
-### 5. Deploy to Production
+Or extend the default Claude Code prompt:
 
-```bash
-vercel --prod
+```typescript
+options: {
+  systemPrompt: {
+    type: "preset",
+    preset: "claude_code",
+    append: "Always explain your reasoning before making changes.",
+  },
+  // ...
+}
 ```
 
-### 6. Verify Deployment
+### Other useful options
 
-1. Open your Vercel production URL
-2. Send a test message: "Create a file called hello.txt"
-3. Check that:
-   - Workspace panel shows the created file
-   - No errors in Vercel logs
+| Option | Description |
+|--------|-------------|
+| `model` | Model to use (e.g. `"claude-sonnet-4-5-20250929"`) |
+| `maxTurns` | Limit the number of conversation turns |
+| `maxBudgetUsd` | Set a max cost budget in USD |
+| `agents` | Define named subagents with their own prompts and tools |
+| `mcpServers` | Connect MCP servers for additional tool capabilities |
 
-### Troubleshooting
+See the full [Claude Agent SDK docs](https://platform.claude.com/docs/en/agent-sdk/typescript) for all options.
 
-**"Vulnerable version of Next.js detected"**
-- Update Next.js: `npm install next@latest react@latest react-dom@latest`
-- Redeploy: `vercel --prod`
+## Agent Credentials
+
+The agent running inside the Moru sandbox needs Anthropic credentials. There are two approaches:
+
+### Option A: `.credentials.json` (baked into template)
+
+The Dockerfile copies `agent/.credentials.json` into the image. To generate this file, run `claude login` locally and copy `~/.claude/.credentials.json` to `agent/.credentials.json`. Then rebuild the template with `pnpm build:template`.
+
+### Option B: `ANTHROPIC_API_KEY` environment variable
+
+Set the API key as an environment variable when creating the sandbox. This avoids baking credentials into the Docker image. Pass it through the sandbox environment in `lib/moru.ts`.
+
+## Troubleshooting
 
 **"Can't reach database server"**
-- Check DATABASE_URL is correct
-- For Supabase, use the pooler/transaction URL
-- Verify database is active
-
-**"MORU_API_KEY not set"**
-- Add the environment variable: `vercel env add MORU_API_KEY production`
-- Redeploy after adding
+- Verify your `DATABASE_URL` is correct and the database is running
+- For hosted providers (Supabase, Neon), make sure you're using the correct connection string format — Supabase requires the pooler/transaction URL for serverless
 
 **Agent callback fails (ECONNREFUSED)**
-- Ensure BASE_URL matches your actual production URL
-- For local development, use a tunnel (ngrok) or deploy to Vercel
+- Your `BASE_URL` must be reachable from the Moru sandbox. For local dev, use ngrok — `http://localhost:3000` won't work since the sandbox runs remotely
+- Make sure ngrok is running and the URL in `.env` matches the current ngrok session
 
-**Vercel Authentication page appears**
-- Use the production alias URL (e.g., `hackathon-starter-sigma.vercel.app`)
-- Not the deployment-specific URL with random hash
+**Workspace panel shows no files**
+- The agent may still be running — files appear after the agent writes them
+- Check that the conversation has a `volumeId` in the database
 
-## Live Demo
+**"MORU_API_KEY not set"**
+- Add the variable to your `.env` for local dev or `vercel env add` for production
+- Redeploy after adding environment variables on Vercel
 
-Production URL: https://hackathon-starter-sigma.vercel.app
+**Template build fails**
+- Ensure `MORU_API_KEY` is set in your `.env`
+- Check that `agent/src/agent.ts` exists and compiles without errors
 
-## Next Steps
-
-1. Test full conversation flow
-2. Verify file creation and workspace sync
-3. Test session resume functionality
+**Vercel shows authentication page instead of your app**
+- Use the production alias URL (e.g. `your-app.vercel.app`), not the deployment-specific URL with a random hash
