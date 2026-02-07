@@ -19,7 +19,7 @@ RUN node --version && npm --version && claude --version && tsc --version
 # Create /app directory and copy agent code
 RUN mkdir -p /app/src
 COPY src/ /app/src/
-RUN find /app/src -type f -name '*.ts' -exec chmod 644 {} \;
+RUN find /app/src -type f -name '*.ts' -print0 | xargs -0 chmod 644
 
 # Create symlink to global node_modules so agent can import packages
 RUN ln -s /usr/local/lib/node_modules /app/node_modules
