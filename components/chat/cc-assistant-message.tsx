@@ -7,15 +7,18 @@ import type {
   AssistantMessage,
   ContentBlock,
   ToolResultBlock,
+  PlannerAgentResponse,
 } from "@/lib/types";
 import {
   isTextBlock,
   isThinkingBlock,
   isToolUseBlock,
+  isPlannerAgentResponse,
 } from "@/lib/types";
 import { MemoizedMarkdown } from "./markdown";
 import { CCThinkingBlock } from "./cc-thinking-block";
 import { CCToolUseBlock } from "./cc-tool-use-block";
+import { CCAgentResponse } from "./cc-agent-response";
 
 interface CCAssistantMessageProps {
   message: AssistantMessage;
@@ -64,6 +67,27 @@ function groupContentBlocks(
   return groups;
 }
 
+function tryParsePlannerResponse(blocks: ContentBlock[]): PlannerAgentResponse | null {
+  const text = blocks
+    .filter(isTextBlock)
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+
+  if (!text) return null;
+
+  try {
+    const parsed = JSON.parse(text);
+    if (isPlannerAgentResponse(parsed)) {
+      return parsed;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 /**
  * Claude Code Assistant Message Component
  */
@@ -85,6 +109,7 @@ export function CCAssistantMessage({
     () => groupContentBlocks(content, resultsMap),
     [content, resultsMap]
   );
+  const plannerResponse = useMemo(() => tryParsePlannerResponse(content), [content]);
 
   // Handle API error messages
   if (message.isApiErrorMessage) {
@@ -119,6 +144,14 @@ export function CCAssistantMessage({
 
   if (groups.length === 0) {
     return null;
+  }
+
+  if (plannerResponse) {
+    return (
+      <div className={cn("px-3 py-2", className)}>
+        <CCAgentResponse response={plannerResponse} />
+      </div>
+    );
   }
 
   return (

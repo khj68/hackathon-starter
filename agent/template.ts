@@ -50,12 +50,12 @@ async function buildTemplate() {
   console.log(`Template ID: ${buildInfo.templateId}`);
   console.log(`Alias: ${buildInfo.alias}`);
   console.log();
-  console.log("Agent code at: /app/agent.mts");
+  console.log("Agent code at: /app/src/agent.ts");
   console.log("Credentials at: ~/.claude/.credentials.json");
   console.log();
   console.log(`Usage:`);
   console.log(`  const sbx = await Sandbox.create('${templateAlias}')`);
-  console.log(`  await sbx.commands.run('cd /app && npx tsx agent.mts')`);
+  console.log(`  await sbx.commands.run('cd /app && npx tsx src/agent.ts')`);
 }
 
 buildTemplate().catch((err) => {

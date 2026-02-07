@@ -208,3 +208,88 @@ export interface StatusCallbackRequest {
   errorMessage?: string;
   sessionId?: string;
 }
+
+export type PlannerStage =
+  | "collect_intent"
+  | "collect_dates"
+  | "collect_region"
+  | "collect_weights"
+  | "search"
+  | "recommend";
+
+export interface PlannerQuestionOption {
+  label: string;
+  value: string;
+}
+
+export interface PlannerQuestion {
+  id: string;
+  text: string;
+  options: PlannerQuestionOption[];
+  allowFreeText: boolean;
+}
+
+export interface PlannerFlightResult {
+  id: string;
+  summary: string;
+  price: { amount: number; currency: string };
+  provider: string;
+  score: number;
+  url: string;
+  badges: string[];
+}
+
+export interface PlannerStayResult {
+  id: string;
+  name: string;
+  rating: number;
+  pricePerNight: { amount: number; currency: string };
+  location: { area: string; lat: number; lng: number };
+  provider: string;
+  score: number;
+  url: string;
+  badges: string[];
+}
+
+export interface PlannerRouteDraftDay {
+  day: number;
+  title: string;
+  items: Array<{ time: string; name: string; type: string; url?: string }>;
+}
+
+export interface PlannerAgentResponse {
+  type: "agent_response";
+  stage: PlannerStage;
+  questions: PlannerQuestion[];
+  state: Record<string, unknown>;
+  results: {
+    flights: PlannerFlightResult[];
+    stays: PlannerStayResult[];
+    routeDraft: PlannerRouteDraftDay[];
+  };
+  ui: {
+    cards: Array<{
+      type: "flight" | "stay" | "place";
+      refId: string;
+      ctaLabel: string;
+    }>;
+  };
+}
+
+export function isPlannerAgentResponse(value: unknown): value is PlannerAgentResponse {
+  if (!value || typeof value !== "object") return false;
+  const obj = value as Record<string, unknown>;
+  if (obj.type !== "agent_response") return false;
+  if (!obj.results || typeof obj.results !== "object") return false;
+  if (!obj.ui || typeof obj.ui !== "object") return false;
+
+  const results = obj.results as Record<string, unknown>;
+  const ui = obj.ui as Record<string, unknown>;
+
+  return (
+    Array.isArray(results.flights) &&
+    Array.isArray(results.stays) &&
+    Array.isArray(results.routeDraft) &&
+    Array.isArray(ui.cards)
+  );
+}

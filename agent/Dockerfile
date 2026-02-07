@@ -17,9 +17,9 @@ RUN npm install -g @anthropic-ai/claude-agent-sdk typescript tsx
 RUN node --version && npm --version && claude --version && tsc --version
 
 # Create /app directory and copy agent code
-RUN mkdir -p /app
-COPY src/agent.ts /app/agent.mts
-RUN chmod 644 /app/agent.mts
+RUN mkdir -p /app/src
+COPY src/ /app/src/
+RUN find /app/src -type f -name '*.ts' -exec chmod 644 {} \;
 
 # Create symlink to global node_modules so agent can import packages
 RUN ln -s /usr/local/lib/node_modules /app/node_modules

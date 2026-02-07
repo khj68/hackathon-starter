@@ -10,7 +10,8 @@
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "build:template": "pnpm --filter hackathon-agent run build:template"
+    "build:template": "pnpm --filter hackathon-agent run build:template",
+    "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
     "@moru-ai/core": "^0.2.0",
@@ -33,7 +34,8 @@
     "remark-gfm": "^4.0.0",
     "shiki": "^1.27.2",
     "tailwind-merge": "^2.6.0",
-    "use-stick-to-bottom": "^1.0.44"
+    "use-stick-to-bottom": "^1.0.44",
+    "zod": "^4.3.6"
   },
   "packageManager": "pnpm@10.18.3",
   "devDependencies": {
@@ -44,6 +46,7 @@
     "@types/react-dom": "^19",
     "prisma": "^6.2.1",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
