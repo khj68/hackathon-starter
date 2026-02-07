@@ -215,6 +215,132 @@ function parseTravelers(text: string, state: PlannerState): void {
   }
 }
 
+function parseStructuredSelections(text: string, state: PlannerState): void {
+  const selectionLines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^q_[a-z_]+\s*=/.test(line));
+
+  for (const line of selectionLines) {
+    const [rawId, rawValues] = line.split("=");
+    const questionId = (rawId || "").trim();
+    const rawValueText = rawValues || "";
+    const values = (rawValueText.includes("|") ? rawValueText.split("|") : rawValueText.split(","))
+      .map((value) => {
+        try {
+          return decodeURIComponent(value);
+        } catch {
+          return value;
+        }
+      })
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (values.length === 0) continue;
+
+    if (questionId === "q_trip_purpose") {
+      const mapped = values.map((value) => value.toLowerCase()).filter(Boolean);
+      state.trip.purposeTags = [...new Set([...state.trip.purposeTags, ...mapped])];
+    }
+
+    if (questionId === "q_budget_style") {
+      const candidate = values[0];
+      if (candidate === "budget" || candidate === "balanced" || candidate === "premium") {
+        state.trip.budgetStyle = candidate;
+      }
+    }
+
+    if (questionId === "q_trip_pace") {
+      const candidate = values[0];
+      if (candidate === "tight" || candidate === "balanced" || candidate === "relaxed") {
+        state.trip.pace = candidate;
+      }
+    }
+
+    if (questionId === "q_destination_region") {
+      const candidate = values[0];
+      const split = candidate.split(",").map((token) => token.trim());
+      if (split.length >= 2) {
+        state.trip.region.city = split[0] || "";
+        state.trip.region.country = split[1] || "";
+        state.trip.region.freeText = `${state.trip.region.city}, ${state.trip.region.country}`;
+      }
+    }
+
+    if (questionId === "q_must_visit") {
+      if (values.includes("none")) {
+        state.trip.constraints.mustVisit = [];
+      } else if (values.includes("food_shopping")) {
+        state.trip.constraints.mustVisit = ["쇼핑 거리", "로컬 맛집"];
+      } else if (values.includes("landmark")) {
+        state.trip.constraints.mustVisit = ["대표 랜드마크"];
+      }
+    }
+
+    if (questionId === "q_date_flexibility") {
+      const numeric = Number(values[0]);
+      if (!Number.isNaN(numeric)) {
+        state.trip.dates.flexibleDays = Math.max(0, numeric);
+      }
+    }
+
+    if (questionId === "q_origin") {
+      const candidate = values[0];
+      if (candidate === "undecided") {
+        state.trip.origin.freeText = "미정";
+      } else if (candidate) {
+        state.trip.origin.airportCode = candidate;
+      }
+    }
+
+    if (questionId === "q_comfort") {
+      const candidate = values[0];
+      if (candidate === "budget") {
+        state.trip.budgetStyle = "budget";
+        if (!state.trip.seatClass) state.trip.seatClass = "economy";
+      }
+      if (candidate === "balanced") {
+        state.trip.budgetStyle = "balanced";
+      }
+      if (candidate === "premium") {
+        state.trip.budgetStyle = "premium";
+        if (!state.trip.seatClass) state.trip.seatClass = "business";
+      }
+    }
+
+    if (questionId === "q_flight_constraints") {
+      if (values.includes("direct")) state.trip.constraints.maxTransfers = 0;
+      if (values.includes("one_transfer")) state.trip.constraints.maxTransfers = 1;
+      if (values.includes("avoid_redeye")) state.trip.constraints.avoidRedEye = true;
+    }
+
+    if (questionId === "q_route_offer") {
+      if (values.includes("route_yes") || values.includes("stay_first")) {
+        state.dialog.routeAccepted = "yes";
+      }
+      if (values.includes("route_later")) {
+        state.dialog.routeAccepted = "no";
+      }
+    }
+
+    if (questionId === "q_route_stay_area") {
+      if (values.includes("stay_undecided")) {
+        state.trip.stay.decided = false;
+        state.trip.stay.area = "";
+      } else if (values.includes("stay_center")) {
+        state.trip.stay.decided = true;
+        state.trip.stay.area = "시내 중심";
+      } else if (values.includes("stay_transit")) {
+        state.trip.stay.decided = true;
+        state.trip.stay.area = "역세권";
+      } else if (values.includes("stay_scenic")) {
+        state.trip.stay.decided = true;
+        state.trip.stay.area = "해변 근처";
+      }
+    }
+  }
+}
+
 function parseRegion(text: string, state: PlannerState): { matched: boolean; undecided: boolean } {
   const lower = text.toLowerCase();
   const undecided = UNKNOWN_DESTINATION_TOKENS.some((token) => lower.includes(token));
@@ -416,6 +542,7 @@ function applyTextUpdate(state: PlannerState, input: string): PlannerState {
   const beforePurposeCount = state.trip.purposeTags.length;
   const beforeRegion = state.trip.region.freeText;
 
+  parseStructuredSelections(text, state);
   parseTravelers(text, state);
   const regionResult = parseRegion(text, state);
   parseOrigin(text, state);

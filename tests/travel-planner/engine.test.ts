@@ -88,3 +88,27 @@ test("route flow asks stay-location first then avoids repeating same question", 
   assert.ok(!questionIds.includes("q_route_stay_area"));
   assert.ok(output.response.results.routeDraft.length > 0);
 });
+
+test("structured option payload maps cleanly and route timeline is detailed", async () => {
+  let state = cloneInitialState();
+  state.trip.purposeTags = ["food"];
+  state.trip.region.city = "Tokyo";
+  state.trip.region.country = "Japan";
+  state.trip.dates.start = "2026-05-10";
+  state.trip.dates.end = "2026-05-14";
+  state.trip.origin.airportCode = "ICN";
+  state.trip.budgetStyle = "balanced";
+  state.trip.pace = "balanced";
+
+  let output = await runPlannerEngine(state, "추천해줘");
+  state = output.state;
+  output = await runPlannerEngine(state, "q_route_offer=route_yes\nq_route_stay_area=stay_center");
+
+  assert.ok(output.response.results.routeDraft.length > 0);
+  const day1 = output.response.results.routeDraft[0];
+  assert.ok(day1);
+  assert.ok((day1?.items || []).length >= 8);
+  assert.ok((day1?.items || []).some((item) => item.time === "08:00"));
+  assert.ok((day1?.items || []).some((item) => item.time === "12:30"));
+  assert.ok((day1?.items || []).some((item) => item.time === "20:00"));
+});

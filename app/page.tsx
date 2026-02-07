@@ -19,7 +19,7 @@ interface PendingMessage {
 
 const LOADING_PHRASES = [
   "여행 가방에 설렘 담는 중",
-  "동선을 말랑하게 다듬는 중",
+  "동선을 열심히 다듬는 중",
   "항공이랑 숙소 궁합 맞춰보는 중",
   "취향에 맞는 코스를 고르는 중",
   "곧 딱 맞는 여행 플랜을 보여줄게",
@@ -27,19 +27,35 @@ const LOADING_PHRASES = [
 
 function getCountryBackground(country: string, city?: string): string | null {
   const normalized = country.trim().toLowerCase();
-  const seedMap: Record<string, string> = {
-    japan: "japan+travel+landscape",
-    thailand: "thailand+beach+travel",
-    "south korea": "korea+coast+landscape",
-    france: "france+nature+travel",
-    "united kingdom": "uk+landscape+travel",
-    "united states": "usa+national+park",
-    singapore: "singapore+skyline+travel",
+
+  // Use stable Unsplash CDN image URLs instead of source.unsplash.com random queries.
+  // Random query endpoints are prone to failed loads or placeholders.
+  const staticImageMap: Record<string, string> = {
+    japan:
+      "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=1920&q=80",
+    thailand:
+      "https://images.unsplash.com/photo-1504214208698-ea1916a2195a?auto=format&fit=crop&w=1920&q=80",
+    "south korea":
+      "https://images.unsplash.com/photo-1538485399081-7c8976f2db73?auto=format&fit=crop&w=1920&q=80",
+    france:
+      "https://images.unsplash.com/photo-1431274172761-fca41d930114?auto=format&fit=crop&w=1920&q=80",
+    "united kingdom":
+      "https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=1920&q=80",
+    "united states":
+      "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=1920&q=80",
+    singapore:
+      "https://images.unsplash.com/photo-1525625293386-3f8f99389edd?auto=format&fit=crop&w=1920&q=80",
   };
 
-  const query = seedMap[normalized] || `${country}+travel+landscape`;
-  const cityQuery = city ? `${city}+${query}` : query;
-  return `https://source.unsplash.com/1600x900/?${encodeURIComponent(cityQuery)}`;
+  if (staticImageMap[normalized]) {
+    return staticImageMap[normalized];
+  }
+
+  if (city && city.toLowerCase() === "tokyo") {
+    return "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=1920&q=80";
+  }
+
+  return "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=1920&q=80";
 }
 
 export default function Home() {
@@ -212,18 +228,26 @@ export default function Home() {
     : null;
   return (
     <div
-      className="travel-page-load flex h-screen flex-col"
+      className="travel-page-load flex min-h-screen flex-col"
       style={
         destinationBackground
           ? {
               backgroundImage: `linear-gradient(180deg, rgba(2, 6, 23, 0.52), rgba(15, 23, 42, 0.6)), url(${destinationBackground})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              backgroundAttachment: "fixed",
             }
           : undefined
       }
     >
-      <header className="mx-3 mt-3 rounded-2xl travel-glass px-4 py-3">
+      <header
+        className={`mx-3 mt-3 rounded-2xl travel-glass px-4 py-3 ${
+          destinationBackground
+            ? "border-white/45 bg-white/40 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.72)] backdrop-blur-xl"
+            : ""
+        }`}
+      >
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl border border-fuchsia-200 bg-gradient-to-br from-pink-50 to-blue-50 p-2 text-fuchsia-600 cute-bounce">
@@ -244,7 +268,13 @@ export default function Home() {
       </header>
 
       <div className="flex-1 p-3 pt-2">
-        <div className="travel-glass cute-pop flex h-full flex-col rounded-[1.6rem] shadow-[0_24px_70px_-36px_rgba(168,85,247,0.46)]">
+        <div
+          className={`travel-glass cute-pop flex h-full w-full flex-col rounded-[1.6rem] shadow-[0_24px_70px_-36px_rgba(168,85,247,0.46)] ${
+            destinationBackground
+              ? "border-white/20 bg-white/5 shadow-[0_28px_70px_-34px_rgba(2,6,23,0.62)] backdrop-blur-md"
+              : ""
+          }`}
+        >
           <div className="flex-1 overflow-auto">
             {!hasMessages ? (
               <div className="flex h-full flex-col items-center justify-center px-4 text-center">

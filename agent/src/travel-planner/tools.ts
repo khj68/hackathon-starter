@@ -65,6 +65,33 @@ function buildMapsUrl(query: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
+function buildRouteItems(
+  day: number,
+  destination: string,
+  stayArea: string,
+  highlightSpot: string,
+  purposeTags: string[]
+): RouteDraftDay["items"] {
+  const isFoodFocused = purposeTags.includes("food");
+  const morningSpot = day === 1 ? "호텔 체크인 준비/짐 정리" : "현지 아침 산책";
+  const lunchSpot = isFoodFocused ? "로컬 브런치 맛집" : "대표 점심 식당";
+  const afternoonSpot = day === 1 ? highlightSpot : `${highlightSpot} 주변 명소`;
+  const dinnerSpot = isFoodFocused ? "현지 디너 코스" : "저녁 인기 식당";
+  const nightSpot = day === 1 ? "야경 포인트 산책" : "야시장/밤 카페";
+
+  return [
+    { time: "08:00", name: morningSpot, type: "activity", url: buildMapsUrl(`${destination} ${stayArea} morning walk`) },
+    { time: "09:30", name: "카페 브레이크", type: "meal", url: buildMapsUrl(`${destination} ${stayArea} cafe`) },
+    { time: "11:00", name: `숙소 체크인 (${stayArea})`, type: "stay" },
+    { time: "12:30", name: lunchSpot, type: "meal", url: buildMapsUrl(`${destination} ${stayArea} lunch`) },
+    { time: "14:00", name: afternoonSpot, type: "place", url: buildMapsUrl(`${destination} ${afternoonSpot}`) },
+    { time: "16:00", name: "휴식/자유 시간", type: "activity" },
+    { time: "18:00", name: dinnerSpot, type: "meal", url: buildMapsUrl(`${destination} ${stayArea} dinner`) },
+    { time: "20:00", name: nightSpot, type: "place", url: buildMapsUrl(`${destination} ${nightSpot}`) },
+    { time: "22:00", name: "숙소 복귀 및 마무리", type: "move" },
+  ];
+}
+
 export class MockTravelToolProvider implements TravelToolProvider {
   async searchFlights(input: FlightSearchInput): Promise<FlightResult[]> {
     const seed = hashSeed(`${input.origin}-${input.destination}-${input.startDate}-${input.endDate}`);
@@ -165,32 +192,17 @@ export class MockTravelToolProvider implements TravelToolProvider {
   }
 
   async draftRoute(input: RouteDraftInput): Promise<RouteDraftDay[]> {
-    const days = Math.max(1, Math.min(input.days, 3));
+    const days = Math.max(1, Math.min(input.days, 5));
     const mustVisit = input.mustVisit.length > 0 ? input.mustVisit : ["메인 스팟"];
     const route: RouteDraftDay[] = [];
 
     const stayAreaLabel = input.stayArea?.trim() || "접근성 좋은 중심지";
     for (let day = 1; day <= days; day += 1) {
+      const highlightSpot = mustVisit[(day - 1) % mustVisit.length];
       route.push({
         day,
-        title: day === 1 ? "도착 + 가벼운 이동" : `${day}일차 추천 동선`,
-        items: [
-          { time: "10:00", name: `숙소 체크인 (${stayAreaLabel})`, type: "stay" },
-          {
-            time: "11:30",
-            name: mustVisit[(day - 1) % mustVisit.length],
-            type: "place",
-            url: buildMapsUrl(`${input.destination} ${stayAreaLabel} ${mustVisit[(day - 1) % mustVisit.length]}`),
-          },
-          {
-            time: "15:00",
-            name: input.purposeTags.includes("food") ? "현지 인기 맛집" : "핵심 관광지",
-            type: "place",
-            url: buildMapsUrl(
-              `${input.destination} ${stayAreaLabel} ${input.purposeTags.includes("food") ? "restaurant" : "attraction"}`
-            ),
-          },
-        ],
+        title: day === 1 ? "도착 + 첫날 적응 동선" : `${day}일차 아침-밤 상세 동선`,
+        items: buildRouteItems(day, input.destination, stayAreaLabel, highlightSpot, input.purposeTags),
       });
     }
 

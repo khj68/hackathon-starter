@@ -41,14 +41,14 @@ export function CCAgentResponse({ response, onSubmitSelections }: CCAgentRespons
     return selectedCount > 0 || freeText.trim().length > 0;
   }, [selectedByQuestion, freeText]);
 
-  const toggleOption = (questionId: string, optionLabel: string): void => {
+  const toggleOption = (questionId: string, optionValue: string): void => {
     setSelectedByQuestion((prev) => {
       const next = { ...prev };
       const existing = new Set(next[questionId] || []);
-      if (existing.has(optionLabel)) {
-        existing.delete(optionLabel);
+      if (existing.has(optionValue)) {
+        existing.delete(optionValue);
       } else {
-        existing.add(optionLabel);
+        existing.add(optionValue);
       }
       next[questionId] = existing;
       return next;
@@ -80,10 +80,10 @@ export function CCAgentResponse({ response, onSubmitSelections }: CCAgentRespons
                     <button
                       type="button"
                       key={`${question.id}-${option.value}`}
-                      onClick={() => toggleOption(question.id, option.label)}
+                      onClick={() => toggleOption(question.id, option.value)}
                       className={[
                         "max-w-[280px] rounded-2xl border px-2.5 py-1.5 text-left text-xs transition",
-                        selectedByQuestion[question.id]?.has(option.label)
+                        selectedByQuestion[question.id]?.has(option.value)
                           ? "border-violet-500 bg-violet-500 text-white"
                           : "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100",
                       ].join(" ")}
@@ -92,7 +92,7 @@ export function CCAgentResponse({ response, onSubmitSelections }: CCAgentRespons
                       {option.reason && (
                         <div
                           className={
-                            selectedByQuestion[question.id]?.has(option.label)
+                            selectedByQuestion[question.id]?.has(option.value)
                               ? "mt-0.5 text-[11px] text-white/85"
                               : "mt-0.5 text-[11px] text-violet-500/85"
                           }
@@ -122,7 +122,7 @@ export function CCAgentResponse({ response, onSubmitSelections }: CCAgentRespons
                 for (const question of response.questions) {
                   const selected = [...(selectedByQuestion[question.id] || [])];
                   if (selected.length > 0) {
-                    lines.push(`${question.text}: ${selected.join(", ")}`);
+                    lines.push(`${question.id}=${selected.map((value) => encodeURIComponent(value)).join("|")}`);
                   }
                 }
                 if (freeText.trim()) {
