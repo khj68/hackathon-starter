@@ -23,6 +23,7 @@ function mergeWithInitial(partial: unknown): PlannerState {
       dates: { ...base.trip.dates, ...(obj.trip?.dates || {}) },
       travelers: { ...base.trip.travelers, ...(obj.trip?.travelers || {}) },
       origin: { ...base.trip.origin, ...(obj.trip?.origin || {}) },
+      stay: { ...base.trip.stay, ...(obj.trip?.stay || {}) },
       constraints: { ...base.trip.constraints, ...(obj.trip?.constraints || {}) },
     },
     weights: { ...base.weights, ...(obj.weights || {}) },

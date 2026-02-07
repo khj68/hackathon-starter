@@ -220,6 +220,7 @@ export type PlannerStage =
 export interface PlannerQuestionOption {
   label: string;
   value: string;
+  reason?: string;
 }
 
 export interface PlannerQuestion {
@@ -262,7 +263,11 @@ export interface PlannerAgentResponse {
   stage: PlannerStage;
   questions: PlannerQuestion[];
   state: {
-    trip?: Record<string, unknown>;
+    trip?: {
+      region?: { country?: string; city?: string; freeText?: string };
+      stay?: { decided?: boolean; area?: string; notes?: string };
+      purposeTags?: string[];
+    };
     weights?: Record<string, number>;
     weightRationale?: Array<{ key: string; reason: string }>;
     dialog?: {
@@ -270,6 +275,10 @@ export interface PlannerAgentResponse {
       assumptions?: string[];
       lastAskedQuestionIds?: string[];
       questionAttempts?: Record<string, number>;
+      routeProposalAsked?: boolean;
+      routeAccepted?: "unknown" | "yes" | "no";
+      stayQuestionAsked?: boolean;
+      offerDiverseOptions?: boolean;
     };
   };
   results: {

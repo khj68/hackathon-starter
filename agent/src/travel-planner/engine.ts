@@ -1,4 +1,4 @@
-import { AgentResponse, AgentResponseSchema, EMPTY_RESULTS, PlannerState } from "./schema.js";
+import { AgentResponse, AgentResponseSchema, EMPTY_RESULTS, PlannerQuestion, PlannerState } from "./schema.js";
 import { generateQuestions } from "./questions.js";
 import { scoreFlights, scoreStays } from "./scoring.js";
 import {
@@ -38,6 +38,9 @@ const AIRPORT_MAP: Array<{ code: string; city: string; aliases: string[] }> = [
 
 const UNKNOWN_DESTINATION_TOKENS = ["모르겠", "미정", "아무데나", "상관없", "추천해줘"];
 const URGENT_DEPARTURE_TOKENS = ["최대한 빨리", "빨리", "당장", "일주일 안", "이번 주", "곧"];
+const ROUTE_YES_TOKENS = ["동선", "여행 경로", "일정 추천", "루트", "경로 추천", "지금 추천해줘", "route_yes"];
+const ROUTE_NO_TOKENS = ["나중에", "아니", "괜찮", "패스", "지금 말고"];
+const STAY_UNDECIDED_TOKENS = ["숙소 미정", "숙소는 미정", "미정", "아직 안 정함"];
 
 function ensureDialogState(state: PlannerState): void {
   if (!state.dialog) {
@@ -46,8 +49,22 @@ function ensureDialogState(state: PlannerState): void {
       questionAttempts: {},
       reasoningLog: [],
       assumptions: [],
+      routeProposalAsked: false,
+      routeAccepted: "unknown",
+      stayQuestionAsked: false,
+      offerDiverseOptions: false,
     };
+    return;
   }
+
+  state.dialog.lastAskedQuestionIds = state.dialog.lastAskedQuestionIds || [];
+  state.dialog.questionAttempts = state.dialog.questionAttempts || {};
+  state.dialog.reasoningLog = state.dialog.reasoningLog || [];
+  state.dialog.assumptions = state.dialog.assumptions || [];
+  state.dialog.routeProposalAsked = state.dialog.routeProposalAsked ?? false;
+  state.dialog.routeAccepted = state.dialog.routeAccepted || "unknown";
+  state.dialog.stayQuestionAsked = state.dialog.stayQuestionAsked ?? false;
+  state.dialog.offerDiverseOptions = state.dialog.offerDiverseOptions ?? false;
 }
 
 function pushReasoning(state: PlannerState, message: string): void {
@@ -275,6 +292,62 @@ function parseComfortChoices(text: string, state: PlannerState): void {
   }
 }
 
+function parseStayLocationPreference(text: string, state: PlannerState): void {
+  const lower = text.toLowerCase();
+
+  if (STAY_UNDECIDED_TOKENS.some((token) => lower.includes(token))) {
+    state.trip.stay.decided = false;
+    state.trip.stay.area = "";
+    state.trip.stay.notes = "undecided";
+    return;
+  }
+
+  if (lower.includes("시내")) {
+    state.trip.stay.decided = true;
+    state.trip.stay.area = "시내 중심";
+    return;
+  }
+
+  if (lower.includes("역세권") || lower.includes("교통")) {
+    state.trip.stay.decided = true;
+    state.trip.stay.area = "역세권";
+    return;
+  }
+
+  if (lower.includes("해변") || lower.includes("바다")) {
+    state.trip.stay.decided = true;
+    state.trip.stay.area = "해변 근처";
+    return;
+  }
+
+  const explicitStayArea = text.match(/(?:숙소|호텔)\s*(?:위치|지역)?\s*(?:는|은|:)?\s*([^\n.,]+)/i);
+  if (explicitStayArea?.[1]) {
+    state.trip.stay.decided = true;
+    state.trip.stay.area = explicitStayArea[1].trim();
+  }
+}
+
+function parseRoutePreference(text: string, state: PlannerState): void {
+  const lower = text.toLowerCase();
+  if (ROUTE_NO_TOKENS.some((token) => lower.includes(token))) {
+    state.dialog.routeAccepted = "no";
+    return;
+  }
+
+  if (lower.includes("숙소 먼저")) {
+    state.dialog.routeAccepted = "yes";
+    return;
+  }
+
+  const routeIntent =
+    ROUTE_YES_TOKENS.some((token) => lower.includes(token)) ||
+    /(여행\s*경로|동선|루트|itinerary)/i.test(text);
+
+  if (routeIntent) {
+    state.dialog.routeAccepted = "yes";
+  }
+}
+
 function parseConstraints(text: string, state: PlannerState): void {
   const lower = text.toLowerCase();
 
@@ -347,6 +420,8 @@ function applyTextUpdate(state: PlannerState, input: string): PlannerState {
   const regionResult = parseRegion(text, state);
   parseOrigin(text, state);
   parseComfortChoices(text, state);
+  parseStayLocationPreference(text, state);
+  parseRoutePreference(text, state);
   parseConstraints(text, state);
 
   const parsedRange = parseDateRange(text);
@@ -420,11 +495,12 @@ function applyAmbiguityAssumptions(state: PlannerState, userText: string, stage:
   if (stage === "collect_intent" && !hasIntent(state)) {
     const attempts = questionAttemptCount(state, "q_trip_purpose");
     if (attempts >= 1) {
+      state.dialog.offerDiverseOptions = true;
       if (state.trip.purposeTags.length === 0) {
         if (/(휴식|쉬러|힐링|쉬고)/i.test(userText)) {
           state.trip.purposeTags = ["relax"];
         } else {
-          state.trip.purposeTags = ["sightseeing"];
+          state.trip.purposeTags = ["relax", "sightseeing"];
         }
         pushAssumption(state, `목적 응답이 모호해 기본 목적을 '${state.trip.purposeTags[0]}'로 가정함`);
       }
@@ -507,6 +583,51 @@ function diffDays(start: string, end: string): number {
   return Math.max(1, Math.ceil((endMs - startMs) / (1000 * 60 * 60 * 24)));
 }
 
+function chooseSuggestedStayArea(state: PlannerState): string {
+  if (state.trip.stay.area) return state.trip.stay.area;
+  if (state.trip.purposeTags.includes("relax")) return "해변 근처";
+  if (state.trip.purposeTags.includes("food")) return "핫플 상권 근처";
+  if (state.weights.route >= 0.3) return "역세권";
+  return "시내 중심";
+}
+
+function buildRecommendQuestions(state: PlannerState): PlannerQuestion[] {
+  const questions: PlannerQuestion[] = [];
+
+  if (hasRegion(state) && state.dialog.routeAccepted === "unknown") {
+    questions.push({
+      id: "q_route_offer",
+      text: "여행 경로 추천도 같이 진행할까?",
+      options: [
+        { label: "지금 추천해줘", value: "route_yes", reason: "항공/숙소 후보 기준으로 바로 일자별 동선을 만들 수 있음" },
+        { label: "숙소 먼저 고를래", value: "stay_first", reason: "숙소 위치를 확정하면 이동 동선을 더 정확히 최적화 가능" },
+        { label: "나중에 볼게", value: "route_later", reason: "지금은 항공/숙소 비교에만 집중할 수 있음" },
+      ],
+      allowFreeText: true,
+    });
+  }
+
+  if (
+    state.dialog.routeAccepted === "yes" &&
+    !state.trip.stay.decided &&
+    (state.dialog.questionAttempts["q_route_stay_area"] || 0) === 0
+  ) {
+    questions.push({
+      id: "q_route_stay_area",
+      text: "여행 경로 최적화를 위해 숙소 위치가 정해졌는지 알려줘.",
+      options: [
+        { label: "시내 중심으로 잡아줘", value: "stay_center", reason: "관광/식당 접근성이 좋아 첫 방문자 일정에 안정적" },
+        { label: "역세권 위주로", value: "stay_transit", reason: "대중교통 이동 시간이 줄어 동선 효율이 높아짐" },
+        { label: "해변/자연 근처로", value: "stay_scenic", reason: "휴양 중심 일정에서 체류 만족도가 높아짐" },
+        { label: "아직 미정", value: "stay_undecided", reason: "취향 기반으로 추천 숙소 위치까지 함께 제안 가능" },
+      ],
+      allowFreeText: true,
+    });
+  }
+
+  return questions.slice(0, 2);
+}
+
 function buildUICards(results: AgentResponse["results"]): AgentResponse["ui"]["cards"] {
   const cards: AgentResponse["ui"]["cards"] = [];
 
@@ -582,15 +703,35 @@ export async function runPlannerEngine(
       pushReasoning(state, `숙소 후보 ${results.stays.length}건 스코어링 완료`);
     }
 
-    if (canDraftRoute(state)) {
+    if (state.dialog.routeAccepted === "yes" && state.trip.stay.decided && canDraftRoute(state)) {
       results.routeDraft = await tools.draftRoute({
         destination,
         purposeTags: state.trip.purposeTags,
         mustVisit: state.trip.constraints.mustVisit,
         maxDailyWalkKm: state.trip.constraints.maxDailyWalkKm,
         days: diffDays(state.trip.dates.start, state.trip.dates.end),
+        stayArea: state.trip.stay.decided ? state.trip.stay.area : chooseSuggestedStayArea(state),
       });
       pushReasoning(state, `동선 초안 ${results.routeDraft.length}일 생성`);
+    } else if (
+      state.dialog.routeAccepted === "yes" &&
+      !state.trip.stay.decided &&
+      state.dialog.stayQuestionAsked &&
+      questionAttemptCount(state, "q_route_stay_area") >= 1
+    ) {
+      const suggestedArea = chooseSuggestedStayArea(state);
+      state.trip.stay.area = suggestedArea;
+      state.trip.stay.decided = false;
+      pushAssumption(state, `숙소 위치 미정이라 '${suggestedArea}' 기준으로 경로/숙소 추천을 준비함`);
+      results.routeDraft = await tools.draftRoute({
+        destination,
+        purposeTags: state.trip.purposeTags,
+        mustVisit: state.trip.constraints.mustVisit,
+        maxDailyWalkKm: state.trip.constraints.maxDailyWalkKm,
+        days: diffDays(state.trip.dates.start, state.trip.dates.end),
+        stayArea: suggestedArea,
+      });
+      pushReasoning(state, `숙소 위치 추정 기반으로 동선 ${results.routeDraft.length}일을 생성함`);
     }
 
     if (results.flights.length > 0 || results.stays.length > 0) {
@@ -630,6 +771,47 @@ export async function runPlannerEngine(
         ],
         allowFreeText: true,
       });
+    }
+  }
+
+  if (stage === "recommend") {
+    if (state.dialog.routeAccepted === "unknown" && questionAttemptCount(state, "q_route_offer") >= 1) {
+      state.dialog.routeAccepted = "yes";
+      pushAssumption(state, "경로 제안 질문 응답이 모호해 기본적으로 경로 추천을 계속 진행함");
+    }
+
+    if (state.dialog.routeAccepted === "yes" && !state.trip.stay.decided && questionAttemptCount(state, "q_route_stay_area") >= 1) {
+      const suggestedArea = chooseSuggestedStayArea(state);
+      state.trip.stay.area = suggestedArea;
+      pushAssumption(state, `숙소 위치 답변이 모호해 '${suggestedArea}' 기준으로 경로를 우선 제안함`);
+    }
+
+    const recommendQuestions = buildRecommendQuestions(state);
+    if (recommendQuestions.length > 0) {
+      questions = recommendQuestions;
+      if (recommendQuestions.some((question) => question.id === "q_route_offer")) {
+        state.dialog.routeProposalAsked = true;
+      }
+      if (recommendQuestions.some((question) => question.id === "q_route_stay_area")) {
+        state.dialog.stayQuestionAsked = true;
+      }
+    } else if (
+      state.dialog.routeAccepted === "yes" &&
+      results.routeDraft.length === 0 &&
+      canDraftRoute(state) &&
+      (state.trip.stay.decided ||
+        (state.dialog.stayQuestionAsked && questionAttemptCount(state, "q_route_stay_area") >= 1))
+    ) {
+      const destination = getDestinationLabel(state);
+      results.routeDraft = await tools.draftRoute({
+        destination,
+        purposeTags: state.trip.purposeTags,
+        mustVisit: state.trip.constraints.mustVisit,
+        maxDailyWalkKm: state.trip.constraints.maxDailyWalkKm,
+        days: diffDays(state.trip.dates.start, state.trip.dates.end),
+        stayArea: state.trip.stay.decided ? state.trip.stay.area : chooseSuggestedStayArea(state),
+      });
+      pushReasoning(state, `경로 추천 요청에 따라 동선 ${results.routeDraft.length}일을 생성함`);
     }
   }
 

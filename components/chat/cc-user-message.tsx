@@ -48,12 +48,12 @@ export function CCUserMessage({ message, className }: CCUserMessageProps) {
   return (
     <div
       className={cn(
-        "relative w-full rounded-lg p-px",
+        "relative w-full rounded-2xl p-px",
         "user-message-border user-message-shadow",
         className
       )}
     >
-      <div className="from-card/10 to-card relative z-0 w-full overflow-clip rounded-lg bg-gradient-to-t px-3 py-2 text-sm">
+      <div className="from-card/10 to-card relative z-0 w-full overflow-clip rounded-2xl bg-gradient-to-t px-3 py-2 text-sm text-violet-900">
         {/* Images */}
         {images.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">

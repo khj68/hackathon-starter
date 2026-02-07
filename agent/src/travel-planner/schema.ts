@@ -12,6 +12,7 @@ export const StageSchema = z.enum([
 export const QuestionOptionSchema = z.object({
   label: z.string().min(1),
   value: z.string().min(1),
+  reason: z.string().min(1).optional(),
 });
 
 export const QuestionSchema = z.object({
@@ -51,6 +52,11 @@ export const TripSchema = z.object({
   stayLevel: z.enum(["", "3_star", "4_star", "5_star", "pool_villa"]).default(""),
   seatClass: z.enum(["", "economy", "business", "first"]).default(""),
   pace: z.enum(["", "tight", "balanced", "relaxed"]).default(""),
+  stay: z.object({
+    decided: z.boolean().default(false),
+    area: z.string().default(""),
+    notes: z.string().default(""),
+  }),
   constraints: z.object({
     maxTransfers: z.number().int().min(0).nullable().default(null),
     avoidRedEye: z.boolean().default(false),
@@ -85,6 +91,10 @@ export const DialogStateSchema = z.object({
   questionAttempts: z.record(z.string(), z.number().int().min(0)).default({}),
   reasoningLog: z.array(z.string()).default([]),
   assumptions: z.array(z.string()).default([]),
+  routeProposalAsked: z.boolean().default(false),
+  routeAccepted: z.enum(["unknown", "yes", "no"]).default("unknown"),
+  stayQuestionAsked: z.boolean().default(false),
+  offerDiverseOptions: z.boolean().default(false),
 });
 
 export const PlannerStateSchema = z.object({
@@ -96,6 +106,10 @@ export const PlannerStateSchema = z.object({
     questionAttempts: {},
     reasoningLog: [],
     assumptions: [],
+    routeProposalAsked: false,
+    routeAccepted: "unknown",
+    stayQuestionAsked: false,
+    offerDiverseOptions: false,
   }),
 });
 
@@ -173,6 +187,7 @@ export type WeightKey = z.infer<typeof WeightKeySchema>;
 export type PlannerState = z.infer<typeof PlannerStateSchema>;
 export type PlannerWeights = z.infer<typeof WeightsSchema>;
 export type AgentResponse = z.infer<typeof AgentResponseSchema>;
+export type PlannerQuestionOption = z.infer<typeof QuestionOptionSchema>;
 export type PlannerQuestion = z.infer<typeof QuestionSchema>;
 export type FlightResult = z.infer<typeof FlightResultSchema>;
 export type StayResult = z.infer<typeof StayResultSchema>;
@@ -203,6 +218,11 @@ export const INITIAL_STATE: PlannerState = {
     stayLevel: "",
     seatClass: "",
     pace: "",
+    stay: {
+      decided: false,
+      area: "",
+      notes: "",
+    },
     constraints: {
       maxTransfers: null,
       avoidRedEye: false,
@@ -217,5 +237,9 @@ export const INITIAL_STATE: PlannerState = {
     questionAttempts: {},
     reasoningLog: [],
     assumptions: [],
+    routeProposalAsked: false,
+    routeAccepted: "unknown",
+    stayQuestionAsked: false,
+    offerDiverseOptions: false,
   },
 };

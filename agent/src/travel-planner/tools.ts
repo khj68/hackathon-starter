@@ -26,6 +26,7 @@ export interface RouteDraftInput {
   mustVisit: string[];
   maxDailyWalkKm: number | null;
   days: number;
+  stayArea?: string;
 }
 
 export interface TravelToolProvider {
@@ -168,23 +169,26 @@ export class MockTravelToolProvider implements TravelToolProvider {
     const mustVisit = input.mustVisit.length > 0 ? input.mustVisit : ["메인 스팟"];
     const route: RouteDraftDay[] = [];
 
+    const stayAreaLabel = input.stayArea?.trim() || "접근성 좋은 중심지";
     for (let day = 1; day <= days; day += 1) {
       route.push({
         day,
         title: day === 1 ? "도착 + 가벼운 이동" : `${day}일차 추천 동선`,
         items: [
-          { time: "10:00", name: "체크인/짐 보관", type: "stay" },
+          { time: "10:00", name: `숙소 체크인 (${stayAreaLabel})`, type: "stay" },
           {
             time: "11:30",
             name: mustVisit[(day - 1) % mustVisit.length],
             type: "place",
-            url: buildMapsUrl(`${input.destination} ${mustVisit[(day - 1) % mustVisit.length]}`),
+            url: buildMapsUrl(`${input.destination} ${stayAreaLabel} ${mustVisit[(day - 1) % mustVisit.length]}`),
           },
           {
             time: "15:00",
             name: input.purposeTags.includes("food") ? "현지 인기 맛집" : "핵심 관광지",
             type: "place",
-            url: buildMapsUrl(`${input.destination} ${input.purposeTags.includes("food") ? "restaurant" : "attraction"}`),
+            url: buildMapsUrl(
+              `${input.destination} ${stayAreaLabel} ${input.purposeTags.includes("food") ? "restaurant" : "attraction"}`
+            ),
           },
         ],
       });

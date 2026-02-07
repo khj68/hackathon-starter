@@ -38,12 +38,7 @@ export function canSearchStays(state: PlannerState): boolean {
 }
 
 export function canDraftRoute(state: PlannerState): boolean {
-  return (
-    state.trip.purposeTags.length > 0 &&
-    (state.trip.constraints.maxDailyWalkKm !== null ||
-      state.trip.constraints.mustVisit.length > 0 ||
-      state.trip.pace !== "")
-  );
+  return hasRegion(state) && hasDates(state);
 }
 
 export function deriveStage(state: PlannerState): Stage {

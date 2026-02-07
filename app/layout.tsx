@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Playfair_Display, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
+import { Fredoka, Nunito, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
-const sansFont = Plus_Jakarta_Sans({
+const sansFont = Nunito({
   variable: "--font-travel-sans",
   subsets: ["latin"],
 });
@@ -13,7 +13,7 @@ const monoFont = JetBrains_Mono({
   subsets: ["latin"],
 });
 
-const displayFont = Playfair_Display({
+const displayFont = Fredoka({
   variable: "--font-travel-display",
   subsets: ["latin"],
 });
@@ -29,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body
         className={`${sansFont.variable} ${monoFont.variable} ${displayFont.variable} antialiased`}
       >
