@@ -1,18 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable";
 import { CCMessages } from "@/components/chat/cc-messages";
 import { PromptForm } from "@/components/chat/prompt-form";
-import { WorkspacePanel } from "@/components/workspace/workspace-panel";
 import type { SessionEntry, ConversationResponse } from "@/lib/types";
-import { PanelRight } from "lucide-react";
+import { Compass, MapPinned, Plane, Sparkles } from "lucide-react";
 
-// Pending message type for optimistic UI
 interface PendingMessage {
   id: string;
   content: string;
@@ -26,14 +19,9 @@ export default function Home() {
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [showWorkspace, setShowWorkspace] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Track post-completion poll attempts to avoid infinite polling
   const postCompletionPollsRef = useRef(0);
 
-  // Extract text from a user message content (handles both string and ContentBlock[]).
   const getUserMessageText = useCallback((content: string | unknown[]): string => {
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
@@ -45,8 +33,6 @@ export default function Home() {
     return "";
   }, []);
 
-  // Check if a pending message has a matching user message in server data.
-  // Used to remove pending messages once the server confirms them.
   const hasPendingMatch = useCallback(
     (pending: PendingMessage, serverMsgs: SessionEntry[]) => {
       return serverMsgs.some(
@@ -58,15 +44,10 @@ export default function Home() {
     [getUserMessageText]
   );
 
-  // Polling for conversation updates
-  // Keeps polling while "running", and also after "completed"/"error" if
-  // pending messages haven't appeared in server data yet (volume sync delay).
   useEffect(() => {
     if (!conversationId) return;
 
     const isDone = status === "completed" || status === "error";
-
-    // Stop polling once done AND all pending messages are resolved (or retries exhausted)
     if (isDone && (pendingMessages.length === 0 || postCompletionPollsRef.current >= 10)) return;
     if (!isDone && status !== "running") return;
 
@@ -75,26 +56,20 @@ export default function Home() {
         const response = await fetch(`/api/conversations/${conversationId}`);
         if (response.ok) {
           const data: ConversationResponse = await response.json();
-
-          // Update server messages
           setServerMessages(data.messages);
 
-          // Remove only the pending messages that now appear in server data.
-          // This handles both first-turn (no prior messages) and multi-turn
-          // (prior messages exist but new ones haven't synced yet).
           if (data.messages.length > 0) {
             setPendingMessages((prev) =>
-              prev.filter((p) => !hasPendingMatch(p, data.messages))
+              prev.filter((pending) => !hasPendingMatch(pending, data.messages))
             );
           }
 
           if (data.status === "completed" || data.status === "error") {
-            postCompletionPollsRef.current++;
+            postCompletionPollsRef.current += 1;
           }
 
           setStatus(data.status);
           setErrorMessage(data.errorMessage || null);
-          setRefreshTrigger((prev) => prev + 1);
         }
       } catch (error) {
         console.error("Polling error:", error);
@@ -104,24 +79,22 @@ export default function Home() {
     return () => clearInterval(pollInterval);
   }, [conversationId, status, pendingMessages.length, hasPendingMatch]);
 
-  // Compute combined messages: server messages + pending messages as SessionEntry
   const messages: SessionEntry[] = [
     ...serverMessages,
-    ...pendingMessages.map((p): SessionEntry => ({
+    ...pendingMessages.map((pending): SessionEntry => ({
       type: "user",
-      uuid: p.id,
+      uuid: pending.id,
       parentUuid: serverMessages.length > 0 ? serverMessages[serverMessages.length - 1].uuid : null,
       sessionId: "",
-      timestamp: p.timestamp,
+      timestamp: pending.timestamp,
       isSidechain: false,
       message: {
         role: "user",
-        content: p.content,
+        content: pending.content,
       },
     })),
   ];
 
-  // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [serverMessages, pendingMessages]);
@@ -132,14 +105,13 @@ export default function Home() {
       setErrorMessage(null);
       postCompletionPollsRef.current = 0;
 
-      // Add pending message immediately for optimistic UI
       const pendingId = `pending-${Date.now()}`;
-      const pendingMsg: PendingMessage = {
+      const pending: PendingMessage = {
         id: pendingId,
         content,
         timestamp: new Date().toISOString(),
       };
-      setPendingMessages((prev) => [...prev, pendingMsg]);
+      setPendingMessages((prev) => [...prev, pending]);
 
       try {
         const response = await fetch("/api/conversations", {
@@ -160,8 +132,7 @@ export default function Home() {
         setConversationId(data.conversationId);
         setStatus("running");
       } catch (error) {
-        // Remove pending message on error
-        setPendingMessages((prev) => prev.filter((m) => m.id !== pendingId));
+        setPendingMessages((prev) => prev.filter((item) => item.id !== pendingId));
         setErrorMessage(error instanceof Error ? error.message : "Unknown error");
       } finally {
         setIsSubmitting(false);
@@ -174,95 +145,82 @@ export default function Home() {
   const hasMessages = messages.length > 0;
 
   return (
-    <div className="flex h-screen flex-col bg-background">
-      {/* Header - minimal like Maru */}
-      <header className="flex items-center justify-between border-b border-border px-4 h-[52px]">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-medium">hackathon-starter</span>
+    <div className="travel-page-load flex h-screen flex-col">
+      <header className="mx-3 mt-3 rounded-2xl travel-glass px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl border border-cyan-300/40 bg-cyan-400/10 p-2 text-cyan-100">
+              <Compass className="size-4" />
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-100/70">Travel Assistant</p>
+              <h1 className="text-lg font-semibold text-slate-50 [font-family:var(--font-travel-display)]">Travel Agent</h1>
+            </div>
+          </div>
+
+          <div className="hidden items-center gap-2 md:flex">
+            <span className="travel-chip"><Plane className="mr-1 inline size-3" /> Flight</span>
+            <span className="travel-chip"><MapPinned className="mr-1 inline size-3" /> Route</span>
+            <span className="travel-chip"><Sparkles className="mr-1 inline size-3" /> Smart Plan</span>
+          </div>
         </div>
-        {!showWorkspace && (
-          <button
-            onClick={() => setShowWorkspace(true)}
-            className="p-1.5 hover:bg-muted rounded transition-colors"
-            title="Open workspace"
-          >
-            <PanelRight className="size-4 text-muted-foreground" />
-          </button>
-        )}
       </header>
 
-      {/* Main content */}
-      <ResizablePanelGroup direction="horizontal" className="flex-1">
-        {/* Chat panel */}
-        <ResizablePanel defaultSize={showWorkspace ? 55 : 100} minSize={40}>
-          <div className="flex h-full flex-col">
-            {/* Messages area */}
-            <div className="flex-1 overflow-auto">
-              {!hasMessages ? (
-                <div className="flex h-full flex-col items-center justify-center px-4">
-                  <h1 className="font-mono text-lg mb-6">
-                    ✳ What can I help with?
-                  </h1>
-                  <div className="w-full max-w-xl">
-                    <PromptForm
-                      onSubmit={handleSubmit}
-                      isLoading={isLoading}
-                      disabled={status === "running"}
-                      placeholder="Ask anything"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="max-w-3xl mx-auto px-4 py-6">
-                  <CCMessages entries={messages} />
-                  <div ref={messagesEndRef} />
-                </div>
-              )}
-            </div>
-
-            {/* Error display */}
-            {errorMessage && (
-              <div className="mx-4 mb-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {errorMessage}
-              </div>
-            )}
-
-            {/* Status indicator */}
-            {status === "running" && hasMessages && (
-              <div className="mx-4 mb-2 text-sm text-muted-foreground">
-                <span className="animate-pulse">Processing...</span>
-              </div>
-            )}
-
-            {/* Bottom prompt form (only when there are messages) */}
-            {hasMessages && (
-              <div className="border-t border-border p-4">
-                <div className="max-w-3xl mx-auto">
+      <div className="flex-1 p-3 pt-2">
+        <div className="travel-glass flex h-full flex-col rounded-2xl">
+          <div className="flex-1 overflow-auto">
+            {!hasMessages ? (
+              <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-100/65">Plan Your Next Escape</p>
+                <h2 className="mt-2 text-3xl font-semibold text-slate-50 [font-family:var(--font-travel-display)]">
+                  어떤 여행을 가보고 싶어?
+                </h2>
+                <p className="mt-3 max-w-xl text-sm text-slate-300/90">
+                  예산, 일정, 분위기만 말해주면 항공·숙소·동선을 한 번에 정리해드릴게요.
+                </p>
+                <div className="mt-8 w-full max-w-2xl">
                   <PromptForm
                     onSubmit={handleSubmit}
                     isLoading={isLoading}
                     disabled={status === "running"}
-                    placeholder="Follow-up message..."
+                    placeholder="예: 다음 주 3박4일, 가성비 좋고 휴식 중심으로 추천해줘"
                   />
                 </div>
               </div>
+            ) : (
+              <div className="mx-auto max-w-4xl px-4 py-6">
+                <CCMessages entries={messages} onSubmitSelections={handleSubmit} />
+                <div ref={messagesEndRef} />
+              </div>
             )}
           </div>
-        </ResizablePanel>
 
-        {showWorkspace && (
-          <>
-            <ResizableHandle />
-            <ResizablePanel defaultSize={45} minSize={25}>
-              <WorkspacePanel
-                conversationId={conversationId}
-                refreshTrigger={refreshTrigger}
-                onClose={() => setShowWorkspace(false)}
-              />
-            </ResizablePanel>
-          </>
-        )}
-      </ResizablePanelGroup>
+          {errorMessage && (
+            <div className="mx-4 mb-3 rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+              {errorMessage}
+            </div>
+          )}
+
+          {status === "running" && hasMessages && (
+            <div className="mx-4 mb-2 text-sm text-cyan-100/80">
+              <span className="shimmer">Travel Agent가 최적 경로를 계산 중...</span>
+            </div>
+          )}
+
+          {hasMessages && (
+            <div className="border-t border-slate-500/30 p-4">
+              <div className="mx-auto max-w-4xl">
+                <PromptForm
+                  onSubmit={handleSubmit}
+                  isLoading={isLoading}
+                  disabled={status === "running"}
+                  placeholder="추가 조건을 입력해줘 (예: 직항만, 밤 비행 제외, 도보 적게)"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

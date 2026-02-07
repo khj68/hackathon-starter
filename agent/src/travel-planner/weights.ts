@@ -11,7 +11,7 @@ export interface PreferenceSignals {
 }
 
 const PURPOSE_KEYWORDS: Record<string, string[]> = {
-  relax: ["휴양", "힐링", "쉬고", "여유", "호캉스"],
+  relax: ["휴양", "힐링", "쉬고", "여유", "호캉스", "휴식", "쉬고싶", "쉬러", "쉬러가"],
   sightseeing: ["관광", "명소", "투어", "구경"],
   food: ["미식", "맛집", "먹방", "레스토랑", "카페"],
   shopping: ["쇼핑", "아울렛", "백화점"],
@@ -62,7 +62,7 @@ export function inferPreferenceSignalsFromText(text: string): PreferenceSignals 
   const purposeTags = parsePurposeTags(text);
 
   let budgetStyle: PreferenceSignals["budgetStyle"];
-  if (["최저가", "저렴", "가성비", "budget"].some((token) => lower.includes(token))) {
+  if (["최저가", "저렴", "가성비", "budget", "돈이 없", "돈없"].some((token) => lower.includes(token))) {
     budgetStyle = "budget";
   } else if (["프리미엄", "럭셔리", "고급", "premium"].some((token) => lower.includes(token))) {
     budgetStyle = "premium";
@@ -71,7 +71,7 @@ export function inferPreferenceSignalsFromText(text: string): PreferenceSignals 
   }
 
   let pace: PreferenceSignals["pace"];
-  if (["빡빡", "타이트", "tight"].some((token) => lower.includes(token))) {
+  if (["빡빡", "타이트", "tight", "후딱", "빨리"].some((token) => lower.includes(token))) {
     pace = "tight";
   } else if (["여유", "천천히", "느긋", "relaxed"].some((token) => lower.includes(token))) {
     pace = "relaxed";

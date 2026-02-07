@@ -26,6 +26,7 @@ interface CCAssistantMessageProps {
   toolResults?: Map<string, ToolResultBlock>;
   isStreaming?: boolean;
   className?: string;
+  onSubmitSelections?: (message: string) => void;
 }
 
 type GroupedContent =
@@ -97,6 +98,7 @@ export function CCAssistantMessage({
   toolResults,
   isStreaming = false,
   className,
+  onSubmitSelections,
 }: CCAssistantMessageProps) {
   const content = mergedContent ?? message.message.content;
 
@@ -149,7 +151,7 @@ export function CCAssistantMessage({
   if (plannerResponse) {
     return (
       <div className={cn("px-3 py-2", className)}>
-        <CCAgentResponse response={plannerResponse} />
+        <CCAgentResponse response={plannerResponse} onSubmitSelections={onSubmitSelections} />
       </div>
     );
   }

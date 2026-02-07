@@ -261,7 +261,17 @@ export interface PlannerAgentResponse {
   type: "agent_response";
   stage: PlannerStage;
   questions: PlannerQuestion[];
-  state: Record<string, unknown>;
+  state: {
+    trip?: Record<string, unknown>;
+    weights?: Record<string, number>;
+    weightRationale?: Array<{ key: string; reason: string }>;
+    dialog?: {
+      reasoningLog?: string[];
+      assumptions?: string[];
+      lastAskedQuestionIds?: string[];
+      questionAttempts?: Record<string, number>;
+    };
+  };
   results: {
     flights: PlannerFlightResult[];
     stays: PlannerStayResult[];

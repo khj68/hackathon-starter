@@ -6,7 +6,10 @@ import {
   canSearchFlights,
   canSearchStays,
   deriveStage,
+  hasDates,
+  hasIntent,
   hasOriginOrUndecided,
+  hasRegion,
 } from "./stage.js";
 import { MockTravelToolProvider, TravelToolProvider } from "./tools.js";
 import { applyPreferenceSignals, inferPreferenceSignalsFromText } from "./weights.js";
@@ -33,6 +36,50 @@ const AIRPORT_MAP: Array<{ code: string; city: string; aliases: string[] }> = [
   { code: "HND", city: "Tokyo", aliases: ["하네다", "hnd"] },
 ];
 
+const UNKNOWN_DESTINATION_TOKENS = ["모르겠", "미정", "아무데나", "상관없", "추천해줘"];
+const URGENT_DEPARTURE_TOKENS = ["최대한 빨리", "빨리", "당장", "일주일 안", "이번 주", "곧"];
+
+function ensureDialogState(state: PlannerState): void {
+  if (!state.dialog) {
+    state.dialog = {
+      lastAskedQuestionIds: [],
+      questionAttempts: {},
+      reasoningLog: [],
+      assumptions: [],
+    };
+  }
+}
+
+function pushReasoning(state: PlannerState, message: string): void {
+  ensureDialogState(state);
+  state.dialog.reasoningLog.push(message);
+  if (state.dialog.reasoningLog.length > 80) {
+    state.dialog.reasoningLog = state.dialog.reasoningLog.slice(-80);
+  }
+}
+
+function pushAssumption(state: PlannerState, message: string): void {
+  ensureDialogState(state);
+  state.dialog.assumptions.push(message);
+  if (state.dialog.assumptions.length > 40) {
+    state.dialog.assumptions = state.dialog.assumptions.slice(-40);
+  }
+  pushReasoning(state, `[가정] ${message}`);
+}
+
+function questionAttemptCount(state: PlannerState, questionId: string): number {
+  ensureDialogState(state);
+  return state.dialog.questionAttempts[questionId] || 0;
+}
+
+function rememberAskedQuestions(state: PlannerState, questionIds: string[]): void {
+  ensureDialogState(state);
+  state.dialog.lastAskedQuestionIds = questionIds;
+  for (const id of questionIds) {
+    state.dialog.questionAttempts[id] = (state.dialog.questionAttempts[id] || 0) + 1;
+  }
+}
+
 function normalizeDateToken(token: string): string | null {
   const normalized = token.trim().replace(/[./]/g, "-");
   const fullMatch = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -52,6 +99,51 @@ function normalizeDateToken(token: string): string | null {
   return null;
 }
 
+function formatDate(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(base: Date, days: number): Date {
+  const next = new Date(base.getTime());
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function parseTripDurationDays(text: string): number | null {
+  const nightDayMatch = text.match(/(\d+)\s*박\s*(\d+)\s*일/);
+  if (nightDayMatch) {
+    const days = Number(nightDayMatch[2]);
+    if (!Number.isNaN(days) && days >= 2 && days <= 14) {
+      return days;
+    }
+  }
+
+  const onlyDaysMatch = text.match(/(\d+)\s*일\s*(?:정도|쯤|로|가고|예정)?/);
+  if (onlyDaysMatch) {
+    const days = Number(onlyDaysMatch[1]);
+    if (!Number.isNaN(days) && days >= 2 && days <= 14) {
+      return days;
+    }
+  }
+
+  return null;
+}
+
+function parseBudgetStyleFromAmount(text: string): PlannerState["trip"]["budgetStyle"] | null {
+  const amountMatch = text.match(/(\d+(?:\.\d+)?)\s*만\s*원/);
+  if (!amountMatch?.[1]) return null;
+
+  const amountInManwon = Number(amountMatch[1]);
+  if (Number.isNaN(amountInManwon)) return null;
+
+  if (amountInManwon <= 150) return "budget";
+  if (amountInManwon <= 300) return "balanced";
+  return "premium";
+}
+
 function parseDateRange(text: string): { start: string; end: string } | null {
   const rangeRegex = /(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2}).{0,12}(?:~|to|부터|까지|-|—|–).{0,12}(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2})/i;
   const match = text.match(rangeRegex);
@@ -69,7 +161,10 @@ function parseDateRange(text: string): { start: string; end: string } | null {
 }
 
 function parseFlexibleDays(text: string): number | null {
-  const match = text.match(/(?:유동|여유|flex)(?:\D{0,6})(\d{1,2})\s*일/i) || text.match(/\+\-\s*(\d{1,2})\s*일/i);
+  const match =
+    text.match(/(?:유동|여유|flex)(?:\D{0,6})(\d{1,2})\s*일/i) ||
+    text.match(/\+\-\s*(\d{1,2})\s*일/i) ||
+    text.match(/\u00B1\s*(\d{1,2})\s*일/i);
   if (!match) return null;
   return Number(match[1]);
 }
@@ -103,21 +198,36 @@ function parseTravelers(text: string, state: PlannerState): void {
   }
 }
 
-function parseRegion(text: string, state: PlannerState): void {
+function parseRegion(text: string, state: PlannerState): { matched: boolean; undecided: boolean } {
   const lower = text.toLowerCase();
+  const undecided = UNKNOWN_DESTINATION_TOKENS.some((token) => lower.includes(token));
+
+  if (undecided) {
+    state.trip.region.city = "";
+    state.trip.region.country = "";
+    state.trip.region.freeText = "";
+    return { matched: false, undecided: true };
+  }
+
   for (const candidate of CITY_COUNTRY_MAP) {
     if (candidate.aliases.some((alias) => lower.includes(alias))) {
       state.trip.region.city = candidate.city;
       state.trip.region.country = candidate.country;
       state.trip.region.freeText = `${candidate.city}, ${candidate.country}`;
-      return;
+      return { matched: true, undecided: false };
     }
   }
 
   const freeTextMatch = text.match(/(?:여행지|목적지|destination)\s*[:：]?\s*([^\n.,]+)/i);
   if (freeTextMatch?.[1]) {
-    state.trip.region.freeText = freeTextMatch[1].trim();
+    const candidate = freeTextMatch[1].trim();
+    if (!UNKNOWN_DESTINATION_TOKENS.some((token) => candidate.toLowerCase().includes(token))) {
+      state.trip.region.freeText = candidate;
+      return { matched: true, undecided: false };
+    }
   }
+
+  return { matched: false, undecided: false };
 }
 
 function parseOrigin(text: string, state: PlannerState): void {
@@ -160,7 +270,7 @@ function parseComfortChoices(text: string, state: PlannerState): void {
     if (!state.trip.seatClass) state.trip.seatClass = "business";
   }
 
-  if (lower.includes("balanced")) {
+  if (lower.includes("balanced") || lower.includes("균형")) {
     state.trip.budgetStyle = "balanced";
   }
 }
@@ -200,12 +310,41 @@ function parseConstraints(text: string, state: PlannerState): void {
   }
 }
 
+function applyUrgentDateHeuristic(state: PlannerState, text: string): boolean {
+  const lower = text.toLowerCase();
+  const isUrgent = URGENT_DEPARTURE_TOKENS.some((token) => lower.includes(token));
+  const durationDays = parseTripDurationDays(text) || 4;
+
+  if (!isUrgent && !lower.includes("일주일")) {
+    return false;
+  }
+
+  if (state.trip.dates.start && state.trip.dates.end) {
+    return false;
+  }
+
+  const now = new Date();
+  const startDate = addDays(now, 1);
+  const endDate = addDays(startDate, Math.max(1, durationDays - 1));
+
+  state.trip.dates.start = formatDate(startDate);
+  state.trip.dates.end = formatDate(endDate);
+  if (state.trip.dates.flexibleDays === 0) {
+    state.trip.dates.flexibleDays = lower.includes("일주일") ? 3 : 1;
+  }
+
+  return true;
+}
+
 function applyTextUpdate(state: PlannerState, input: string): PlannerState {
   const text = input.trim();
   if (!text) return state;
 
+  const beforePurposeCount = state.trip.purposeTags.length;
+  const beforeRegion = state.trip.region.freeText;
+
   parseTravelers(text, state);
-  parseRegion(text, state);
+  const regionResult = parseRegion(text, state);
   parseOrigin(text, state);
   parseComfortChoices(text, state);
   parseConstraints(text, state);
@@ -214,21 +353,132 @@ function applyTextUpdate(state: PlannerState, input: string): PlannerState {
   if (parsedRange) {
     state.trip.dates.start = parsedRange.start;
     state.trip.dates.end = parsedRange.end;
+    pushReasoning(state, `사용자 입력에서 날짜 범위(${parsedRange.start}~${parsedRange.end})를 추출함`);
   }
 
   const flexibleDays = parseFlexibleDays(text);
   if (flexibleDays !== null) {
     state.trip.dates.flexibleDays = Math.max(0, flexibleDays);
+    pushReasoning(state, `날짜 유동성 ±${state.trip.dates.flexibleDays}일로 반영함`);
+  }
+
+  if (applyUrgentDateHeuristic(state, text)) {
+    pushReasoning(state, `급출발 표현을 기반으로 ${state.trip.dates.start}~${state.trip.dates.end} 임시 일정으로 설정함`);
   }
 
   const signals = inferPreferenceSignalsFromText(text);
   applyPreferenceSignals(state, signals);
 
-  if (signals.budgetStyle && !state.trip.budgetStyle) {
-    state.trip.budgetStyle = signals.budgetStyle;
+  if (!state.trip.budgetStyle) {
+    const budgetFromAmount = parseBudgetStyleFromAmount(text);
+    if (budgetFromAmount) {
+      state.trip.budgetStyle = budgetFromAmount;
+      pushReasoning(state, `예산 언급(만원 단위) 기반으로 '${budgetFromAmount}' 성향을 반영함`);
+    }
+  }
+
+  if (signals.budgetStyle) {
+    pushReasoning(state, `예산 성향을 '${signals.budgetStyle}'로 업데이트함`);
+  }
+
+  if (signals.purposeTags && signals.purposeTags.length > 0) {
+    pushReasoning(state, `여행 목적 태그(${signals.purposeTags.join(", ")})를 인식함`);
+  }
+
+  if (regionResult.undecided) {
+    pushReasoning(state, "목적지가 아직 미정이라는 답변을 감지함");
+  } else if (state.trip.region.freeText && beforeRegion !== state.trip.region.freeText) {
+    pushReasoning(state, `목적지를 '${state.trip.region.freeText}'로 인식함`);
+  }
+
+  if (beforePurposeCount === 0 && state.trip.purposeTags.length > 0) {
+    pushReasoning(state, "여행 목적 정보가 채워져 intent 질문을 축소할 수 있음");
   }
 
   return state;
+}
+
+function chooseFallbackRegion(state: PlannerState): { city: string; country: string; reason: string } {
+  if (state.trip.budgetStyle === "budget" && state.trip.purposeTags.includes("relax")) {
+    return { city: "Fukuoka", country: "Japan", reason: "가성비+휴식 조합에서 단거리/비용 균형이 좋아 우선 제안" };
+  }
+
+  if (state.trip.budgetStyle === "budget") {
+    return { city: "Osaka", country: "Japan", reason: "가성비 우선 기준으로 항공/숙박 옵션이 풍부한 목적지" };
+  }
+
+  if (state.trip.purposeTags.includes("relax")) {
+    return { city: "Jeju", country: "South Korea", reason: "휴식 목적 기준으로 이동 부담이 낮은 목적지" };
+  }
+
+  return { city: "Tokyo", country: "Japan", reason: "목적지 미정 시 기본 탐색 목적지" };
+}
+
+function applyAmbiguityAssumptions(state: PlannerState, userText: string, stage: AgentResponse["stage"]): void {
+  const lower = userText.toLowerCase();
+
+  if (stage === "collect_intent" && !hasIntent(state)) {
+    const attempts = questionAttemptCount(state, "q_trip_purpose");
+    if (attempts >= 1) {
+      if (state.trip.purposeTags.length === 0) {
+        if (/(휴식|쉬러|힐링|쉬고)/i.test(userText)) {
+          state.trip.purposeTags = ["relax"];
+        } else {
+          state.trip.purposeTags = ["sightseeing"];
+        }
+        pushAssumption(state, `목적 응답이 모호해 기본 목적을 '${state.trip.purposeTags[0]}'로 가정함`);
+      }
+
+      if (!state.trip.budgetStyle) {
+        const parsed = parseBudgetStyleFromAmount(userText);
+        state.trip.budgetStyle = parsed || "balanced";
+        pushAssumption(state, `예산 정보가 불완전해 '${state.trip.budgetStyle}' 성향으로 임시 설정함`);
+      }
+
+      if (!state.trip.pace) {
+        state.trip.pace = /(후딱|빨리|타이트)/i.test(userText) ? "tight" : "balanced";
+        pushAssumption(state, `일정 밀도를 '${state.trip.pace}'로 임시 설정함`);
+      }
+    }
+  }
+
+  if (stage === "collect_region" && !hasRegion(state)) {
+    const attempts = questionAttemptCount(state, "q_destination_region");
+    const userUndecided = UNKNOWN_DESTINATION_TOKENS.some((token) => lower.includes(token));
+
+    if (userUndecided || attempts >= 1) {
+      const fallback = chooseFallbackRegion(state);
+      state.trip.region.city = fallback.city;
+      state.trip.region.country = fallback.country;
+      state.trip.region.freeText = `${fallback.city}, ${fallback.country}`;
+      pushAssumption(state, `목적지가 미정이라 '${fallback.city}' 기준으로 우선 검색을 진행함 (${fallback.reason})`);
+    }
+  }
+
+  if (stage === "collect_dates" && !hasDates(state)) {
+    const attempts = questionAttemptCount(state, "q_date_range");
+    const durationDays = parseTripDurationDays(userText);
+    const urgent = URGENT_DEPARTURE_TOKENS.some((token) => lower.includes(token));
+
+    if (urgent || attempts >= 1 || durationDays !== null) {
+      const base = addDays(new Date(), 1);
+      const days = durationDays || 4;
+      state.trip.dates.start = formatDate(base);
+      state.trip.dates.end = formatDate(addDays(base, Math.max(1, days - 1)));
+      if (state.trip.dates.flexibleDays === 0) {
+        state.trip.dates.flexibleDays = lower.includes("일주일") ? 3 : 1;
+      }
+      pushAssumption(state, `정확한 날짜가 없어 ${state.trip.dates.start} 출발 가정으로 ${days}일 일정을 임시 확정함`);
+    }
+  }
+
+  if (stage === "collect_weights" && !hasOriginOrUndecided(state)) {
+    const attempts = questionAttemptCount(state, "q_origin");
+    if (attempts >= 1) {
+      state.trip.origin.freeText = "미정";
+      pushAssumption(state, "출발지가 비어 있어 항공 검색은 '출발지 미정' 조건으로 진행함");
+    }
+  }
 }
 
 function getDestinationLabel(state: PlannerState): string {
@@ -271,6 +521,13 @@ function buildUICards(results: AgentResponse["results"]): AgentResponse["ui"]["c
   return cards;
 }
 
+function questionsAreRepeated(state: PlannerState, questionIds: string[]): boolean {
+  if (questionIds.length === 0) return false;
+  const prev = state.dialog.lastAskedQuestionIds || [];
+  if (prev.length === 0) return false;
+  return questionIds.every((id) => prev.includes(id));
+}
+
 export interface PlannerEngineOutput {
   state: PlannerState;
   response: AgentResponse;
@@ -282,14 +539,20 @@ export async function runPlannerEngine(
   tools: TravelToolProvider = new MockTravelToolProvider()
 ): Promise<PlannerEngineOutput> {
   const state: PlannerState = JSON.parse(JSON.stringify(prevState));
+  ensureDialogState(state);
   applyTextUpdate(state, userText);
 
   let stage = deriveStage(state);
+  applyAmbiguityAssumptions(state, userText, stage);
+  stage = deriveStage(state);
+
   let results = JSON.parse(JSON.stringify(EMPTY_RESULTS)) as AgentResponse["results"];
 
   if (stage === "search") {
     const destination = getDestinationLabel(state);
     const origin = getOriginLabel(state);
+
+    pushReasoning(state, `도구 조회 시작: destination='${destination}', origin='${origin}'`);
 
     if (canSearchFlights(state)) {
       const flights = await tools.searchFlights({
@@ -303,6 +566,7 @@ export async function runPlannerEngine(
         maxTransfers: state.trip.constraints.maxTransfers,
       });
       results.flights = scoreFlights(state, flights);
+      pushReasoning(state, `항공 후보 ${results.flights.length}건 스코어링 완료`);
     }
 
     if (canSearchStays(state)) {
@@ -315,6 +579,7 @@ export async function runPlannerEngine(
         stayLevel: state.trip.stayLevel,
       });
       results.stays = scoreStays(state, stays);
+      pushReasoning(state, `숙소 후보 ${results.stays.length}건 스코어링 완료`);
     }
 
     if (canDraftRoute(state)) {
@@ -325,14 +590,32 @@ export async function runPlannerEngine(
         maxDailyWalkKm: state.trip.constraints.maxDailyWalkKm,
         days: diffDays(state.trip.dates.start, state.trip.dates.end),
       });
+      pushReasoning(state, `동선 초안 ${results.routeDraft.length}일 생성`);
     }
 
     if (results.flights.length > 0 || results.stays.length > 0) {
       stage = "recommend";
+      pushReasoning(state, "핵심 후보가 확보되어 추천 단계로 전환함");
     }
   }
 
-  const questions = stage.startsWith("collect") ? generateQuestions(stage, state, 3) : [];
+  let questions = stage.startsWith("collect")
+    ? generateQuestions(stage, state, 3, { avoidQuestionIds: state.dialog.lastAskedQuestionIds })
+    : [];
+
+  if (stage.startsWith("collect") && questions.length === 0) {
+    questions = generateQuestions(stage, state, 3);
+  }
+
+  if (stage.startsWith("collect") && questionsAreRepeated(state, questions.map((item) => item.id))) {
+    applyAmbiguityAssumptions(state, userText, stage);
+    stage = deriveStage(state);
+    if (stage.startsWith("collect")) {
+      questions = generateQuestions(stage, state, 3, { avoidQuestionIds: state.dialog.lastAskedQuestionIds });
+    } else {
+      questions = [];
+    }
+  }
 
   if (stage === "collect_weights" && !hasOriginOrUndecided(state)) {
     const existingOriginQuestion = questions.find((question) => question.id === "q_origin");
@@ -349,6 +632,8 @@ export async function runPlannerEngine(
       });
     }
   }
+
+  rememberAskedQuestions(state, questions.slice(0, 3).map((question) => question.id));
 
   const response: AgentResponse = {
     type: "agent_response",

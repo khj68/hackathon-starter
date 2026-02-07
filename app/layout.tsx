@@ -1,21 +1,26 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Playfair_Display, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const sansFont = Plus_Jakarta_Sans({
+  variable: "--font-travel-sans",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const monoFont = JetBrains_Mono({
+  variable: "--font-travel-mono",
+  subsets: ["latin"],
+});
+
+const displayFont = Playfair_Display({
+  variable: "--font-travel-display",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Hackathon Starter",
-  description: "Claude Agent SDK + Moru Sandbox Demo",
+  title: "Travel Agent",
+  description: "Chat-based travel planning agent",
 };
 
 export default function RootLayout({
@@ -26,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${sansFont.variable} ${monoFont.variable} ${displayFont.variable} antialiased`}
       >
         <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
       </body>

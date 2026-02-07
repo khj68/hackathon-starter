@@ -42,12 +42,17 @@ function hashSeed(value: string): number {
   return hash;
 }
 
-function buildSkyscannerUrl(input: FlightSearchInput, transfers: number): string {
-  const origin = encodeURIComponent(input.origin || "anywhere");
-  const destination = encodeURIComponent(input.destination);
-  const start = encodeURIComponent(input.startDate || "anytime");
-  const end = encodeURIComponent(input.endDate || "anytime");
-  return `https://www.skyscanner.com/transport/flights/${origin}/${destination}/${start}/${end}/?adults=${input.adults}&children=${input.children}&cabinclass=${encodeURIComponent(input.seatClass || "economy")}&stops=${transfers}`;
+function buildFlightSearchUrl(input: FlightSearchInput, transfers: number): string {
+  const origin = input.origin?.trim() || "Anywhere";
+  const destination = input.destination?.trim() || "Destination";
+  const dateLabel =
+    input.startDate && input.endDate
+      ? `${input.startDate} to ${input.endDate}`
+      : input.startDate || "anytime";
+  const cabin = input.seatClass || "economy";
+  const transferLabel = transfers === 0 ? "direct" : `${transfers} stop`;
+  const query = `Flights from ${origin} to ${destination} on ${dateLabel} for ${input.adults} adults ${input.children} children ${cabin} ${transferLabel}`;
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(query)}`;
 }
 
 function buildBookingUrl(input: StaySearchInput, area: string): string {
@@ -71,7 +76,7 @@ export class MockTravelToolProvider implements TravelToolProvider {
         price: { amount: basePrice, currency: "KRW" },
         provider: "Skyscanner",
         score: 0,
-        url: buildSkyscannerUrl(input, 0),
+        url: buildFlightSearchUrl(input, 0),
         badges: ["direct"],
         transfers: 0,
         durationMinutes: 140,
@@ -82,7 +87,7 @@ export class MockTravelToolProvider implements TravelToolProvider {
         price: { amount: Math.max(90000, basePrice - 70000), currency: "KRW" },
         provider: "Skyscanner",
         score: 0,
-        url: buildSkyscannerUrl(input, 1),
+        url: buildFlightSearchUrl(input, 1),
         badges: ["low_price"],
         transfers: 1,
         durationMinutes: 340,
@@ -93,7 +98,7 @@ export class MockTravelToolProvider implements TravelToolProvider {
         price: { amount: basePrice + 110000, currency: "KRW" },
         provider: "Skyscanner",
         score: 0,
-        url: buildSkyscannerUrl(input, 0),
+        url: buildFlightSearchUrl(input, 0),
         badges: ["comfort"],
         transfers: 0,
         durationMinutes: 130,

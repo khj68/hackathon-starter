@@ -23,6 +23,7 @@ import { CCSystemMessage, shouldShowSystemMessage } from "./cc-system-message";
 
 interface CCMessagesProps {
   entries: SessionEntry[];
+  onSubmitSelections?: (message: string) => void;
 }
 
 interface MergedAssistantMessage {
@@ -200,7 +201,7 @@ function processEntries(entries: SessionEntry[]): {
 /**
  * Claude Code Messages Container
  */
-export function CCMessages({ entries }: CCMessagesProps) {
+export function CCMessages({ entries, onSubmitSelections }: CCMessagesProps) {
   const { displayEntries, toolResultsMap } = useMemo(
     () => processEntries(entries),
     [entries]
@@ -241,6 +242,7 @@ export function CCMessages({ entries }: CCMessagesProps) {
               message={merged.message}
               mergedContent={merged.mergedContent}
               toolResults={messageToolResults}
+              onSubmitSelections={onSubmitSelections}
             />
           );
         }

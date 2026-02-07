@@ -11,7 +11,7 @@ RUN apt-get update && \
 RUN npm install -g @anthropic-ai/claude-code@2.1.1
 
 # Install Claude Agent SDK and TypeScript tooling
-RUN npm install -g @anthropic-ai/claude-agent-sdk typescript tsx
+RUN npm install -g @anthropic-ai/claude-agent-sdk typescript tsx zod
 
 # Verify installations
 RUN node --version && npm --version && claude --version && tsc --version
@@ -30,8 +30,8 @@ RUN mkdir -p /workspace && chmod 777 /workspace
 # Create user home and .claude directories
 RUN mkdir -p /home/user/.claude
 
-# Copy .claude config (CLAUDE.md, skills, etc.)
-COPY .claude/ /home/user/.claude/
+# Copy Claude config (CLAUDE.md, skills, etc.)
+COPY claude-config/ /home/user/.claude/
 
 # Set ownership
 RUN chown -R node:node /workspace /home/user/.claude /app

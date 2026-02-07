@@ -8,6 +8,35 @@ function cloneInitialState(): PlannerState {
   return JSON.parse(JSON.stringify(INITIAL_STATE)) as PlannerState;
 }
 
+function mergeWithInitial(partial: unknown): PlannerState {
+  const base = cloneInitialState();
+  if (!partial || typeof partial !== "object") return base;
+
+  const obj = partial as Record<string, any>;
+  return {
+    ...base,
+    ...obj,
+    trip: {
+      ...base.trip,
+      ...(obj.trip || {}),
+      region: { ...base.trip.region, ...(obj.trip?.region || {}) },
+      dates: { ...base.trip.dates, ...(obj.trip?.dates || {}) },
+      travelers: { ...base.trip.travelers, ...(obj.trip?.travelers || {}) },
+      origin: { ...base.trip.origin, ...(obj.trip?.origin || {}) },
+      constraints: { ...base.trip.constraints, ...(obj.trip?.constraints || {}) },
+    },
+    weights: { ...base.weights, ...(obj.weights || {}) },
+    dialog: {
+      ...base.dialog,
+      ...(obj.dialog || {}),
+      questionAttempts: {
+        ...base.dialog.questionAttempts,
+        ...(obj.dialog?.questionAttempts || {}),
+      },
+    },
+  };
+}
+
 export function getStateFilePath(workspace: string): string {
   return path.join(workspace, STATE_RELATIVE_PATH);
 }
@@ -22,7 +51,8 @@ export function loadPlannerState(workspace: string): PlannerState {
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw);
-    const validated = PlannerStateSchema.safeParse(parsed);
+    const merged = mergeWithInitial(parsed);
+    const validated = PlannerStateSchema.safeParse(merged);
     if (!validated.success) {
       return cloneInitialState();
     }

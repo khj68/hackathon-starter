@@ -80,10 +80,23 @@ export const WeightRationaleSchema = z.object({
   reason: z.string().min(1),
 });
 
+export const DialogStateSchema = z.object({
+  lastAskedQuestionIds: z.array(z.string()).default([]),
+  questionAttempts: z.record(z.string(), z.number().int().min(0)).default({}),
+  reasoningLog: z.array(z.string()).default([]),
+  assumptions: z.array(z.string()).default([]),
+});
+
 export const PlannerStateSchema = z.object({
   trip: TripSchema,
   weights: WeightsSchema,
   weightRationale: z.array(WeightRationaleSchema),
+  dialog: DialogStateSchema.default({
+    lastAskedQuestionIds: [],
+    questionAttempts: {},
+    reasoningLog: [],
+    assumptions: [],
+  }),
 });
 
 export const PriceSchema = z.object({
@@ -199,4 +212,10 @@ export const INITIAL_STATE: PlannerState = {
   },
   weights: DEFAULT_WEIGHTS,
   weightRationale: [],
+  dialog: {
+    lastAskedQuestionIds: [],
+    questionAttempts: {},
+    reasoningLog: [],
+    assumptions: [],
+  },
 };

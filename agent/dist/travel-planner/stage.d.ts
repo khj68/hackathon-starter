@@ -1,0 +1,11 @@
+import { PlannerState, Stage } from "./schema.js";
+export declare function hasIntent(state: PlannerState): boolean;
+export declare function hasRegion(state: PlannerState): boolean;
+export declare function hasDates(state: PlannerState): boolean;
+export declare function hasTravelers(state: PlannerState): boolean;
+export declare function hasBudgetOrComfort(state: PlannerState): boolean;
+export declare function hasOriginOrUndecided(state: PlannerState): boolean;
+export declare function canSearchFlights(state: PlannerState): boolean;
+export declare function canSearchStays(state: PlannerState): boolean;
+export declare function canDraftRoute(state: PlannerState): boolean;
+export declare function deriveStage(state: PlannerState): Stage;

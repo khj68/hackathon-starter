@@ -173,7 +173,16 @@ function buildWeightQuestions(state: PlannerState): PlannerQuestion[] {
   return questions;
 }
 
-export function generateQuestions(stage: Stage, state: PlannerState, maxCount: number = 3): PlannerQuestion[] {
+interface QuestionOptions {
+  avoidQuestionIds?: string[];
+}
+
+export function generateQuestions(
+  stage: Stage,
+  state: PlannerState,
+  maxCount: number = 3,
+  options?: QuestionOptions
+): PlannerQuestion[] {
   let candidates: PlannerQuestion[] = [];
 
   if (stage === "collect_intent") {
@@ -192,5 +201,9 @@ export function generateQuestions(stage: Stage, state: PlannerState, maxCount: n
     candidates = buildWeightQuestions(state);
   }
 
-  return candidates.slice(0, maxCount);
+  const avoidSet = new Set(options?.avoidQuestionIds || []);
+  const filtered = candidates.filter((question) => !avoidSet.has(question.id));
+  const selected = filtered.length > 0 ? filtered : candidates;
+
+  return selected.slice(0, maxCount);
 }
